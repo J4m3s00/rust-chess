@@ -40,7 +40,7 @@ use std::{io, fmt::write};
  */
 
 #[derive(Copy, Clone, PartialEq)]
-enum Team {
+pub enum Team {
     White,
     Black
 }
@@ -57,7 +57,7 @@ mod Casteling {
 
 
 pub struct GameState {
-    board: Board<Piece>,
+    board: Board,
     turn: Team, // True = white, false = black
     en_passent: Option<u8>,
     castle_state: u8,
@@ -136,7 +136,34 @@ impl GameState {
     }
 
     pub fn make_move(&mut self, m: Move) {
-        
+        let square_to_move = self.board.squares[m.from as usize];
+        if let Some(mut square) = square_to_move {
+            // Check if valid move
+            let moves = square.get_possible_moves(self);
+            if moves.iter().find(|fm| { fm.to == m.to }).is_some() {
+                // It is a valid move
+                square.position = m.to;
+
+                self.board.squares[m.from as usize] = None;
+                self.board.squares[m.to as usize] = Some(square);
+                return;
+            }
+        }
+
+        println!("Could not make the move!");
+    }
+
+    pub fn get_possible_moves(&self, team : Team) -> Vec<Move> {
+        let mut moves : Vec<Move> = Vec::new();
+        for square in self.board.squares {
+            if let Some(square) = square {
+                if square.color == team {
+                    let mut piece_moves = square.get_possible_moves(self);
+                    moves.append(&mut piece_moves);
+                }
+            }
+        }
+        return moves;
     }
 }
 
@@ -162,7 +189,7 @@ impl Piece {
     }
 
 
-    fn get_possible_moves(&self, board: &Board<Piece>) -> Vec<Move> {
+    fn get_possible_moves(&self, game_state: &GameState) -> Vec<Move> {
         let mut moves = Vec::new();
         let pos = position_to_xy(self.position);
 
@@ -172,9 +199,9 @@ impl Piece {
                 let next_one_y = if self.color == Team::White { pos.1 + 1 } else { pos.1 - 1 };
                 let next_two_y = if self.color == Team::White { pos.1 + 2 } else { pos.1 - 2 };
 
-                if board.get_piece(position_from_xy(pos.0, next_one_y)).is_none() {
+                if game_state.board.get_piece(position_from_xy(pos.0, next_one_y)).is_none() {
                     moves.push(Move::new(self.position, position_from_xy(pos.0, next_one_y)));
-                    if first_move && board.get_piece(position_from_xy(pos.0, next_two_y)).is_none()
+                    if first_move && game_state.board.get_piece(position_from_xy(pos.0, next_two_y)).is_none()
                     {
                         moves.push(Move::new(self.position, position_from_xy(pos.0, next_two_y)));
                     }
@@ -185,7 +212,7 @@ impl Piece {
                 for m in move_index.iter() {
                     let new_pos = (pos.0 as i8 + m.0, pos.1 as i8 + m.1);
                     if position_xy_inside_s(new_pos.0, new_pos.1) {
-                        let piece = board.get_piece(position_from_xy(new_pos.0 as u8, new_pos.1 as u8));
+                        let piece = game_state.board.get_piece(position_from_xy(new_pos.0 as u8, new_pos.1 as u8));
                         if piece.is_none() || piece.unwrap().color != self.color {
                             moves.push(Move::new(self.position, position_from_xy(new_pos.0 as u8, new_pos.1 as u8)));
                         }
@@ -205,7 +232,7 @@ impl Piece {
                     loop {
                         pos = (pos.0 as i8 + current_offset.0, pos.1 as i8 + current_offset.1);
                         if position_xy_inside_s(pos.0, pos.1) {
-                            let piece = board.get_piece(position_from_xy(pos.0 as u8, pos.1 as u8));
+                            let piece = game_state.board.get_piece(position_from_xy(pos.0 as u8, pos.1 as u8));
                             if piece.is_none() || piece.unwrap().color != self.color {
                                 moves.push(Move::new(self.position, position_from_xy(pos.0 as u8, pos.1 as u8)));
                             }
@@ -231,7 +258,7 @@ impl Piece {
                     loop {
                         pos = (pos.0 as i8 + current_offset.0, pos.1 as i8 + current_offset.1);
                         if position_xy_inside_s(pos.0, pos.1) {
-                            let piece = board.get_piece(position_from_xy(pos.0 as u8, pos.1 as u8));
+                            let piece = game_state.board.get_piece(position_from_xy(pos.0 as u8, pos.1 as u8));
                             if piece.is_none() || piece.unwrap().color != self.color {
                                 moves.push(Move::new(self.position, position_from_xy(pos.0 as u8, pos.1 as u8)));
                             }
@@ -261,7 +288,7 @@ impl Piece {
                     loop {
                         pos = (pos.0 as i8 + current_offset.0, pos.1 as i8 + current_offset.1);
                         if position_xy_inside_s(pos.0, pos.1) {
-                            let piece = board.get_piece(position_from_xy(pos.0 as u8, pos.1 as u8));
+                            let piece = game_state.board.get_piece(position_from_xy(pos.0 as u8, pos.1 as u8));
                             if piece.is_none() || piece.unwrap().color != self.color {
                                 moves.push(Move::new(self.position, position_from_xy(pos.0 as u8, pos.1 as u8)));
                             }
@@ -289,7 +316,7 @@ impl Piece {
                     };
                     let pos = (pos.0 as i8 + current_offset.0, pos.1 as i8 + current_offset.1);
                     if position_xy_inside_s(pos.0, pos.1) {
-                        let piece = board.get_piece(position_from_xy(pos.0 as u8, pos.1 as u8));
+                        let piece = game_state.board.get_piece(position_from_xy(pos.0 as u8, pos.1 as u8));
                         if piece.is_none() || piece.unwrap().color != self.color {
                             moves.push(Move::new(self.position, position_from_xy(pos.0 as u8, pos.1 as u8)));
                         }
@@ -316,20 +343,20 @@ enum PieceType {
 
 #[derive(Copy, Clone)]
 // The chess board
-struct Board<T> {
+struct Board {
     // The board is a 2D array of 64 squares
-    squares: [Option<T>; 8 * 8]
+    squares: [Option<Piece>; 8 * 8]
 }
 
-impl<T : std::marker::Copy> Board<T> {
+impl Board {
 
-    fn new() -> Board<T> {
+    pub const fn new() -> Board {
         return Board {
             squares: [None; 8 * 8]
         };
     }
     
-    fn get_piece(&self, position: u8) -> Option<T> {
+    fn get_piece(&self, position: u8) -> Option<Piece> {
         assert!(position < 64);
         if let Some(piece) = &self.squares[position as usize] {
             return Some(piece.clone());
@@ -337,7 +364,7 @@ impl<T : std::marker::Copy> Board<T> {
         return None;
     }
 
-    fn print_custom(&self, square_callback: &dyn Fn(u8, Option<T>) -> char) {
+    fn print_custom(&self, square_callback: &dyn Fn(u8, Option<Piece>) -> char) {
         println!("---------------------------------");
         for i in 0 .. 8 {
             print!("|");
@@ -353,7 +380,7 @@ impl<T : std::marker::Copy> Board<T> {
     }
 }
 
-impl std::fmt::Display for Board<Piece> {
+impl std::fmt::Display for Board {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         writeln!(f, "---------------------------------")?;
         for i in 0 .. 8 { // We are looping wrong way around
@@ -466,7 +493,7 @@ fn get_input() -> InputMessage {
         return InputMessage::Move(Move {from, to, ..Default::default()});
     } else if input[0] == "s" {
         if input.len() != 2 {
-            return InputMessage::None;
+            return InputMessage::ShowBoard;
         }
         if input[1].to_uppercase() == "BLACK" || input[1].to_uppercase() == "WHITE" {
             let team = if input[1].to_uppercase() == "BLACK" { Team::Black } else { Team::White };
@@ -475,13 +502,11 @@ fn get_input() -> InputMessage {
             let position = get_position_from_string(input[1]);
             return InputMessage::ShowMoves(position);
         }
-    } else if input[0] == "sb" {
-        return InputMessage::ShowBoard;
     }
     return InputMessage::None;
 }
 
-fn print_possible_moves(board: &Board<Piece>, moves: &Vec<Move>) {
+fn print_possible_moves(board: &Board, moves: &Vec<Move>) {
     println!("Showing moves {:?}", moves);
     let custom_print = |pos: u8, square: Option<Piece>|{
         for m in moves {
@@ -515,12 +540,12 @@ fn main() {
             },
             InputMessage::ShowMoves(pos) => {
                 if let Some(piece) = game_state.board.get_piece(pos) {
-                    let moves = piece.get_possible_moves(&game_state.board);
+                    let moves = piece.get_possible_moves(&game_state);
                     print_possible_moves(&game_state.board, &moves);
                 }
             },
             InputMessage::ShowTeam(team) => {
-                let moves = game_state.board.get_possible_moves(team);
+                let moves = game_state.get_possible_moves(team);
                 print_possible_moves(&game_state.board, &moves);
             },
             InputMessage::ShowBoard => {
