@@ -517,7 +517,6 @@ impl Piece {
                         }
                     },
                     Team::Black => {
-                        // | 56| 57| 58| 59| 60| 61| 62| 63|
                         if game_state.castle_state & casteling::BLACK_KING_SIDE != 0 {
                             if game_state.board.is_free(61) &&
                                 game_state.board.is_free(62) 
@@ -788,13 +787,7 @@ fn print_possible_moves(board: &Board, moves: &Vec<Move>) {
 }
 
 fn main() {
-    let casteling_state = casteling::ALL;
-
-    println!("Casteling: {:b}", casteling_state);
-    println!("Casteling: {:b}", casteling_state - (casteling::WHITE_KING_SIDE | casteling::WHITE_QUEEN_SIDE));
-    
     let mut game_state = GameState::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
-    
 
     println!("{}", game_state.board);
 
