@@ -1,4 +1,5 @@
-use std::{io::{self, Write}, any::Any, fs::File, path};
+use std::{io::{self, stdin, Read}, time::Instant};
+
 
 /**
  * 
@@ -45,6 +46,15 @@ pub enum Team {
     Black
 }
 
+impl Team {
+    pub fn other(&self) -> Team {
+        match self {
+            Team::White => Team::Black,
+            Team::Black => Team::White
+        }
+    }
+}
+
 mod casteling {
     pub const WHITE_KING_SIDE: u8 = 1;
     pub const WHITE_QUEEN_SIDE: u8 = 2;
@@ -55,17 +65,25 @@ mod casteling {
 }
 
 
+#[derive(Default, Clone, Debug)]
+pub struct GameStateData {
+    en_passent: Option<u8>,
+    castle_state: u8,
+    captured_piece: Option<PieceType>,
+}
+
 
 pub struct GameState {
     board: Board,
     turn: Team, // True = white, false = black
-    en_passent: Option<u8>,
-    castle_state: u8
+    state: GameStateData,
+    state_stack: Vec<GameStateData>,
+    move_stack: Vec<Move>,
 }
 
 impl GameState {
     pub const fn new() -> GameState {
-        GameState { board: Board::new(), turn: Team::White, en_passent: None, castle_state: casteling::ALL }
+        GameState { board: Board::new(), turn: Team::White, state: GameStateData { en_passent: None, castle_state: casteling::ALL, captured_piece: None}, state_stack: Vec::new(), move_stack: Vec::new() }
     }
 
     pub fn from_fen(fen: &str) -> GameState {
@@ -123,8 +141,13 @@ impl GameState {
         GameState {
             board,
             turn: if turn_fen == "w" { Team::White } else { Team::Black },
-            en_passent,
-            castle_state,
+            state: GameStateData {
+                en_passent,
+                castle_state,
+                captured_piece: None,
+            },
+            state_stack: Default::default(),
+            move_stack: Default::default(),
         }
     }
 
@@ -164,24 +187,27 @@ impl GameState {
         fen.push(' ');
         fen.push(if self.turn == Team::White { 'w' } else { 'b' });
         fen.push(' ');
-        if self.castle_state == 0 {
+        if self.state.castle_state == 0 {
             fen.push('-');
         } else {
-            if self.castle_state & casteling::WHITE_KING_SIDE != 0 { fen.push('K'); }
-            if self.castle_state & casteling::WHITE_QUEEN_SIDE != 0 { fen.push('Q'); }
-            if self.castle_state & casteling::BLACK_KING_SIDE != 0 { fen.push('k'); }
-            if self.castle_state & casteling::BLACK_QUEEN_SIDE != 0 { fen.push('q'); }
+            if self.state.castle_state & casteling::WHITE_KING_SIDE != 0 { fen.push('K'); }
+            if self.state.castle_state & casteling::WHITE_QUEEN_SIDE != 0 { fen.push('Q'); }
+            if self.state.castle_state & casteling::BLACK_KING_SIDE != 0 { fen.push('k'); }
+            if self.state.castle_state & casteling::BLACK_QUEEN_SIDE != 0 { fen.push('q'); }
         }
         fen.push(' ');
-        if self.en_passent.is_none() {
+        if self.state.en_passent.is_none() {
             fen.push('-');
         } else {
-            let position = self.en_passent.unwrap();
+            let position = self.state.en_passent.unwrap();
             let x = position % 8;
             let y = position / 8;
             fen.push((x as u8 + 'a' as u8) as char);
             fen.push((y as u8 + '1' as u8) as char);
         }
+
+        fen.push_str(" 0 1");
+
         fen
     }
 
@@ -199,11 +225,15 @@ impl GameState {
         let piece_possible_moves = piece_to_move.get_possible_moves(self);
         let current_found_move_opt = piece_possible_moves.into_iter().find(|fm| {fm.to == m.to});
         if current_found_move_opt.is_none() {
-            println!("The move is not possible with current position on the board!");
+            println!("The move is not possible with current position on the board! {:?}\nFen:{}", m, self.to_fen_str());
+            let _ = stdin().read(&mut [0u8]).unwrap();
             return;
         }
 
         // We have a valid move!
+        self.state_stack.push(self.state.clone());
+        self.move_stack.push(m);
+
         let current_pos = position_to_xy(piece_to_move.position);
         let current_move = current_found_move_opt.unwrap();
 
@@ -237,7 +267,7 @@ impl GameState {
             },
             _ => ()
         }
-        self.castle_state -= to_remove_castle_state;
+        self.state.castle_state -= to_remove_castle_state;
 
         let casteling_rook = if let MoveType::KingCastle = current_move.move_type {
             if let Team::White = piece_to_move.color {
@@ -263,16 +293,77 @@ impl GameState {
             self.board.squares[capture_pos as usize] = None;
         }
 
+        if let MoveType::Capture = current_move.move_type {
+            if let Some(captured) = self.board.squares[current_move.to as usize] {
+                self.state.captured_piece = Some(captured.piece_type);
+            }
+        }
 
         if current_move.move_type == MoveType::DoublePawnPush {
-            self.en_passent = if piece_to_move.color == Team::White { Some(current_move.from + 8) } else { Some(current_move.from - 8) };
+            self.state.en_passent = if piece_to_move.color == Team::White { Some(current_move.from + 8) } else { Some(current_move.from - 8) };
         } else {
-            self.en_passent = None;
+            self.state.en_passent = None;
         }
 
         self.board.move_piece(current_move);
 
-        self.turn = if self.turn == Team::White { Team::Black } else { Team::White };
+        self.turn = self.turn.other();
+    }
+
+    pub fn unmake_move(&mut self, current_move: Move) {
+        let square_to_move = self.board.squares[current_move.to as usize];
+        if square_to_move.is_none() {
+            println!("No piece to move!");
+            return;
+        }
+        let piece_to_move = square_to_move.unwrap();
+        if piece_to_move.color == self.turn { 
+            println!("The piece you want to move is not the correct team!");
+            return;
+        }
+        
+        self.state_stack.pop();
+        println!("Unmake move: {:?} {:?}", self.state_stack, current_move);
+        let current_state = self.state_stack.last();
+
+        // We have a valid move!
+        let current_pos = position_to_xy(piece_to_move.position);
+
+        match current_move.move_type {
+            MoveType::BishopPromotion | MoveType::KnightPromotion | MoveType::QueenPromotion | MoveType::RookPromotion => {
+                self.board.squares[current_move.from as usize] = Some(Piece::new(piece_to_move.color, PieceType::Pawn, current_move.from));
+                self.board.squares[current_move.to as usize] = None;
+            },
+            MoveType::EnPassantCapture => {
+                let capture_pos = if let Team::White = piece_to_move.color { current_move.to - 8 } else { current_move.to + 8 };
+                self.board.squares[capture_pos as usize] = Some(Piece::new(piece_to_move.color.other(), PieceType::Pawn, capture_pos));
+                self.board.squares[current_move.from as usize] = Some(Piece {position: current_move.from, ..piece_to_move});
+                self.board.squares[current_move.to as usize] = None;
+            },
+            MoveType::Capture => {
+                let capture_type = if let Some(capture_type) = current_state.unwrap().captured_piece {
+                    capture_type
+                } else {
+                    println!("No capture type! {:?}", current_state.unwrap());
+                    PieceType::Pawn
+                };
+                self.board.squares[current_move.from as usize] = Some(Piece {position: current_move.from, ..piece_to_move});
+                self.board.squares[current_move.to as usize] = Some(Piece::new(piece_to_move.color.other(), capture_type, current_move.to));
+            }
+            _ => {
+                self.board.squares[current_move.from as usize] = Some(Piece {position: current_move.from, ..piece_to_move});
+                self.board.squares[current_move.to as usize] = None;
+            }
+        }
+        
+
+
+        if let Some(state) = current_state {
+            self.state = state.clone();
+        }
+        self.turn = self.turn.other();
+
+        self.move_stack.pop();
     }
 
     pub fn get_possible_moves(&self, team : Team) -> Vec<Move> {
@@ -286,6 +377,30 @@ impl GameState {
             }
         }
         return moves;
+    }
+
+
+
+    pub fn run_test(&mut self, depth : u8, debug : bool) -> usize {
+        if depth == 0 {
+            return 1;
+        }
+
+        let moves = self.get_possible_moves(self.turn);
+
+        let mut count = 0;
+        for m in moves.iter() {
+            self.make_move(*m);
+            if debug {
+                println!("{}", self.board);
+            }
+            count += 1;
+            if depth > 1 {
+                count += self.run_test(depth - 1, debug);
+            }
+            self.unmake_move(*m);
+        }
+        return count;
     }
 }
 
@@ -315,6 +430,14 @@ struct Piece {
 }
 
 impl Piece {
+    const fn new(color: Team, piece_type: PieceType, position: u8) -> Piece {
+        Piece {
+            piece_type,
+            color,
+            position
+        }
+    }
+
     fn get_char(&self) -> char {
         match self.piece_type {
             PieceType::Pawn => if self.color == Team::White { 'P' } else { 'p' },
@@ -382,7 +505,7 @@ impl Piece {
 
                 if pos.0 < 7 {
                     let capture_pos = position_from_xy(pos.0 + 1, next_one_y);
-                    let is_enpassant = if let Some(en_passent) = game_state.en_passent {
+                    let is_enpassant = if let Some(en_passent) = game_state.state.en_passent {
                         en_passent == capture_pos
                     } else {
                         false
@@ -408,7 +531,7 @@ impl Piece {
 
                 if pos.0 > 0 {
                     let capture_pos = position_from_xy(pos.0 - 1, next_one_y);
-                    let is_enpassant = if let Some(en_passent) = game_state.en_passent {
+                    let is_enpassant = if let Some(en_passent) = game_state.state.en_passent {
                         en_passent == capture_pos
                     } else {
                         false
@@ -580,7 +703,7 @@ impl Piece {
                 // Check casteling
                 match self.color {
                     Team::White => {
-                        if game_state.castle_state & casteling::WHITE_KING_SIDE != 0 {
+                        if game_state.state.castle_state & casteling::WHITE_KING_SIDE != 0 {
                             if game_state.board.is_free(5) && 
                                 game_state.board.is_free(6) {
                                 // The way is free to castle
@@ -591,7 +714,7 @@ impl Piece {
                                 });
                             }
                         }
-                        if game_state.castle_state & casteling::WHITE_QUEEN_SIDE != 0 {
+                        if game_state.state.castle_state & casteling::WHITE_QUEEN_SIDE != 0 {
                             if game_state.board.is_free(1) && 
                                 game_state.board.is_free(2) &&
                                 game_state.board.is_free(3) {
@@ -604,7 +727,7 @@ impl Piece {
                         }
                     },
                     Team::Black => {
-                        if game_state.castle_state & casteling::BLACK_KING_SIDE != 0 {
+                        if game_state.state.castle_state & casteling::BLACK_KING_SIDE != 0 {
                             if game_state.board.is_free(61) &&
                                 game_state.board.is_free(62) 
                             {
@@ -615,7 +738,7 @@ impl Piece {
                                 });
                             }
                         }
-                        if game_state.castle_state & casteling::BLACK_QUEEN_SIDE != 0 {
+                        if game_state.state.castle_state & casteling::BLACK_QUEEN_SIDE != 0 {
                             if game_state.board.is_free(59) &&
                                 game_state.board.is_free(58) && 
                                 game_state.board.is_free(57) 
@@ -637,7 +760,7 @@ impl Piece {
 }
 
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 enum PieceType {
     Pawn,
     Knight,
@@ -805,10 +928,12 @@ impl Move {
 
 enum InputMessage {
     Move(Move),
+    UndoMove,
     ShowMoves(u8),
     ShowTeam(Team),
     ShowBoard,
     LoadFen(String),
+    RunTest(u8, bool),
     ShowFen,
     Quit,
     None
@@ -850,6 +975,15 @@ fn get_input() -> InputMessage {
             return InputMessage::ShowFen;
         }
         return InputMessage::LoadFen(input[4..].to_string());
+    } else if args[0] == "um" {
+        return InputMessage::UndoMove;
+    } else if args[0] == "rt" {
+        if args.len() < 2 {
+            return InputMessage::None;
+        }
+        let test_number = args[1].parse::<u8>().unwrap();
+        let debug = if args.len() == 3 {args[2].parse::<bool>().unwrap()} else { false };
+        return InputMessage::RunTest(test_number, debug);
     }
     return InputMessage::None;
 }
@@ -881,6 +1015,7 @@ fn print_possible_moves(board: &Board, moves: &Vec<Move>) {
     board.print_custom(&custom_print);
 }
 
+
 fn main() {
     let mut game_state = GameState::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
 
@@ -892,6 +1027,12 @@ fn main() {
             InputMessage::Move(m) => {
                 game_state.make_move(m);
                 println!("{}", game_state.board);
+            },
+            InputMessage::UndoMove => {
+                if let Some(m) = game_state.move_stack.last() {
+                    game_state.unmake_move(*m);
+                    println!("{}", game_state.board);
+                }
             },
             InputMessage::ShowMoves(pos) => {
                 if let Some(piece) = game_state.board.get_piece(pos) {
@@ -915,6 +1056,13 @@ fn main() {
             InputMessage::ShowFen => {
                 println!("{}", game_state.to_fen_str());
             },
+            InputMessage::RunTest(depth, debug) => {
+                println!("Running test with depth {}", depth);
+                println!("Starting fen: {}", game_state.to_fen_str());
+                println!("------------------");
+                println!("Result: {}", game_state.run_test(depth, debug));
+
+            }
             InputMessage::None => { },
             InputMessage::Quit => {
                 break;
