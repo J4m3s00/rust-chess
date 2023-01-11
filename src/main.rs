@@ -153,7 +153,6 @@ impl GameState {
 
         
 
-
         // Update casteling state
         let mut to_remove_castle_state = 0;
         match piece_to_move.piece_type {
@@ -200,6 +199,11 @@ impl GameState {
         if casteling_rook.is_some() && current_move.move_type.is_castle() {
             let rook_pos = get_rook_castle_position(piece_to_move.color, MoveType::KingCastle == current_move.move_type);
             self.board.move_piece(Move::new(casteling_rook.unwrap().position, rook_pos));
+        }
+
+        if let MoveType::EnPassantCapture = current_move.move_type {
+            let capture_pos = if let Team::White = piece_to_move.color { current_move.to - 8 } else { current_move.to + 8 };
+            self.board.squares[capture_pos as usize] = None;
         }
 
 
@@ -321,6 +325,12 @@ impl Piece {
 
                 if pos.0 < 7 {
                     let capture_pos = position_from_xy(pos.0 + 1, next_one_y);
+                    let is_enpassant = if let Some(en_passent) = game_state.en_passent {
+                        en_passent == capture_pos
+                    } else {
+                        false
+                    };
+
                     if let Some(to_capture) = game_state.board.get_piece(capture_pos) {
                         if to_capture.color != self.color {
                             moves.push(Move {
@@ -330,18 +340,38 @@ impl Piece {
                             })
                         }
                     }
+                    else if is_enpassant {
+                        moves.push(Move {
+                            from: self.position,
+                            to: capture_pos,
+                            move_type: MoveType::EnPassantCapture
+                        });
+                    }
                 }
 
                 if pos.0 > 0 {
                     let capture_pos = position_from_xy(pos.0 - 1, next_one_y);
+                    let is_enpassant = if let Some(en_passent) = game_state.en_passent {
+                        en_passent == capture_pos
+                    } else {
+                        false
+                    };
+
                     if let Some(to_capture) = game_state.board.get_piece(capture_pos) {
                         if to_capture.color != self.color {
+                            
                             moves.push(Move {
                                 from: self.position,
                                 to: capture_pos,
                                 move_type: MoveType::Capture
                             });
                         }
+                    } else if is_enpassant {
+                        moves.push(Move {
+                            from: self.position,
+                            to: capture_pos,
+                            move_type: MoveType::EnPassantCapture
+                        });
                     }
                 }
             },
@@ -680,7 +710,7 @@ enum MoveType {
     #[default] Quite,
     Capture,
     DoublePawnPush,
-    EnPassant,
+    EnPassantCapture,
     KingCastle,
     QueenCastle,
     KnightPromotion,
@@ -774,7 +804,11 @@ fn print_possible_moves(board: &Board, moves: &Vec<Move>) {
                     return 'X';
                 }
 
-                return '+';
+                match m.move_type {
+                    MoveType::Capture => return 'X',
+                    MoveType::EnPassantCapture => return 'E',
+                    _ => return '+'
+                }
             }
         }
         if let Some(piece) = square {
