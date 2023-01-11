@@ -1,4 +1,4 @@
-use std::{io, fmt::write};
+use std::{io, any::Any};
 
 /**
  * 
@@ -45,7 +45,7 @@ pub enum Team {
     Black
 }
 
-mod Casteling {
+mod casteling {
     pub const WHITE_KING_SIDE: u8 = 1;
     pub const WHITE_QUEEN_SIDE: u8 = 2;
     pub const BLACK_KING_SIDE: u8 = 4;
@@ -60,21 +60,17 @@ pub struct GameState {
     board: Board,
     turn: Team, // True = white, false = black
     en_passent: Option<u8>,
-    castle_state: u8,
-    moves: Vec<Move>
+    castle_state: u8
 }
 
 impl GameState {
     pub const fn new() -> GameState {
-        GameState { board: Board::new(), turn: Team::White, en_passent: None, castle_state: Casteling::ALL, moves: Vec::new() }
+        GameState { board: Board::new(), turn: Team::White, en_passent: None, castle_state: casteling::ALL }
     }
 
     pub fn from_fen(fen: &str) -> GameState {
         let mut board = Board::new();
-        let mut turn = Team::White;
         let mut en_passent = None;
-        let mut castle_state = Casteling::ALL;
-        let mut moves = Vec::new();
 
         let mut fen_iter = fen.split(' ');
         let board_fen = fen_iter.next().unwrap();
@@ -114,13 +110,11 @@ impl GameState {
             }
         }
 
-        turn = if turn_fen == "w" { Team::White } else { Team::Black };
-
-        castle_state = 0;
-        if castle_fen.contains('K') { castle_state |= Casteling::WHITE_KING_SIDE; }
-        if castle_fen.contains('Q') { castle_state |= Casteling::WHITE_QUEEN_SIDE; }
-        if castle_fen.contains('k') { castle_state |= Casteling::BLACK_KING_SIDE; }
-        if castle_fen.contains('q') { castle_state |= Casteling::BLACK_QUEEN_SIDE; }
+        let mut castle_state = 0;
+        if castle_fen.contains('K') { castle_state |= casteling::WHITE_KING_SIDE; }
+        if castle_fen.contains('Q') { castle_state |= casteling::WHITE_QUEEN_SIDE; }
+        if castle_fen.contains('k') { castle_state |= casteling::BLACK_KING_SIDE; }
+        if castle_fen.contains('q') { castle_state |= casteling::BLACK_QUEEN_SIDE; }
 
         if en_passent_fen != "-" {
             en_passent = Some(position_from_xy(en_passent_fen.chars().nth(0).unwrap() as u8 - 'a' as u8, en_passent_fen.chars().nth(1).unwrap() as u8 - '1' as u8));
@@ -128,29 +122,96 @@ impl GameState {
 
         GameState {
             board,
-            turn,
+            turn: if turn_fen == "w" { Team::White } else { Team::Black },
             en_passent,
             castle_state,
-            moves
         }
     }
 
     pub fn make_move(&mut self, m: Move) {
         let square_to_move = self.board.squares[m.from as usize];
-        if let Some(mut square) = square_to_move {
-            // Check if valid move
-            let moves = square.get_possible_moves(self);
-            if moves.iter().find(|fm| { fm.to == m.to }).is_some() {
-                // It is a valid move
-                square.position = m.to;
-
-                self.board.squares[m.from as usize] = None;
-                self.board.squares[m.to as usize] = Some(square);
-                return;
-            }
+        if square_to_move.is_none() {
+            println!("No piece to move!");
+            return;
+        }
+        let piece_to_move = square_to_move.unwrap();
+        if piece_to_move.color != self.turn { 
+            println!("The piece you want to move is not the correct team!");
+            return;
+        }
+        let piece_possible_moves = piece_to_move.get_possible_moves(self);
+        let current_found_move_opt = piece_possible_moves.into_iter().find(|fm| {fm.to == m.to});
+        if current_found_move_opt.is_none() {
+            println!("The move is not possible with current position on the board!");
+            return;
         }
 
-        println!("Could not make the move!");
+        // We have a valid move!
+        let current_pos = position_to_xy(piece_to_move.position);
+        let current_move = current_found_move_opt.unwrap();
+
+
+        
+
+
+        // Update casteling state
+        let mut to_remove_castle_state = 0;
+        match piece_to_move.piece_type {
+            PieceType::King => {
+                match piece_to_move.color {
+                    Team::White => { to_remove_castle_state = casteling::WHITE_KING_SIDE | casteling::WHITE_QUEEN_SIDE;},
+                    Team::Black => { to_remove_castle_state = casteling::BLACK_KING_SIDE | casteling::BLACK_QUEEN_SIDE;}
+                }
+            },
+            PieceType::Rook => {
+                let king_side = current_pos.0 == 7;
+                to_remove_castle_state = if king_side {
+                    if let Team::White = piece_to_move.color {
+                        casteling::WHITE_KING_SIDE
+                    } else {
+                        casteling::BLACK_KING_SIDE
+                    }
+                } else {
+                    if let Team::White = piece_to_move.color {
+                        casteling::WHITE_QUEEN_SIDE
+                    } else {
+                        casteling::BLACK_QUEEN_SIDE
+                    }
+                }
+            },
+            _ => ()
+        }
+        self.castle_state -= to_remove_castle_state;
+
+        let casteling_rook = if let MoveType::KingCastle = current_move.move_type {
+            if let Team::White = piece_to_move.color {
+                self.board.get_piece(7)
+            } else {
+                self.board.get_piece(63)
+            }
+        } else if let MoveType::QueenCastle = current_move.move_type {
+            if let Team::White = piece_to_move.color {
+                self.board.get_piece(0)
+            } else {
+                self.board.get_piece(56)
+            }
+        } else { None };
+
+        if casteling_rook.is_some() && current_move.move_type.is_castle() {
+            let rook_pos = get_rook_castle_position(piece_to_move.color, MoveType::KingCastle == current_move.move_type);
+            self.board.move_piece(Move::new(casteling_rook.unwrap().position, rook_pos));
+        }
+
+
+        if current_move.move_type == MoveType::DoublePawnPush {
+            self.en_passent = if piece_to_move.color == Team::White { Some(current_move.from + 8) } else { Some(current_move.from - 8) };
+        } else {
+            self.en_passent = None;
+        }
+
+        self.board.move_piece(current_move);
+
+        self.turn = if self.turn == Team::White { Team::Black } else { Team::White };
     }
 
     pub fn get_possible_moves(&self, team : Team) -> Vec<Move> {
@@ -164,6 +225,22 @@ impl GameState {
             }
         }
         return moves;
+    }
+}
+
+fn get_rook_castle_position(team: Team, king_side : bool) -> u8 {
+    if let Team::White = team {
+        if king_side {
+            5
+        } else {
+            3
+        }
+    } else {
+        if king_side {
+            61
+        } else {
+            59
+        }
     }
 }
 
@@ -198,12 +275,73 @@ impl Piece {
                 let first_move = if self.color == Team::White { pos.1 == 1 } else { pos.1 == 6 };
                 let next_one_y = if self.color == Team::White { pos.1 + 1 } else { pos.1 - 1 };
                 let next_two_y = if self.color == Team::White { pos.1 + 2 } else { pos.1 - 2 };
+                let next_is_last = if self.color == Team::White { pos.1 == 6 } else { pos.1 == 1 };
 
+                // Moving forward
                 if game_state.board.get_piece(position_from_xy(pos.0, next_one_y)).is_none() {
-                    moves.push(Move::new(self.position, position_from_xy(pos.0, next_one_y)));
+                    if next_is_last {
+                        // We add all the promotion moves to the list for now
+                        moves.push(Move {
+                            from: self.position,
+                            to: position_from_xy(pos.0, next_one_y),
+                            move_type: MoveType::RookPromotion
+                        });
+                        moves.push(Move {
+                            from: self.position,
+                            to: position_from_xy(pos.0, next_one_y),
+                            move_type: MoveType::QueenPromotion
+                        });
+                        moves.push(Move {
+                            from: self.position,
+                            to: position_from_xy(pos.0, next_one_y),
+                            move_type: MoveType::BishopPromotion
+                        });
+                        moves.push(Move {
+                            from: self.position,
+                            to: position_from_xy(pos.0, next_one_y),
+                            move_type: MoveType::KnightPromotion
+                        });
+                    } else {
+                        moves.push(Move {
+                            from: self.position,
+                            to: position_from_xy(pos.0, next_one_y),
+                            move_type: MoveType::Quite
+                        });
+                    }
                     if first_move && game_state.board.get_piece(position_from_xy(pos.0, next_two_y)).is_none()
                     {
-                        moves.push(Move::new(self.position, position_from_xy(pos.0, next_two_y)));
+                        moves.push(Move {
+                            from: self.position,
+                            to: position_from_xy(pos.0, next_two_y),
+                            move_type: MoveType::DoublePawnPush
+                        });
+                    }
+                }
+                // Capture
+
+                if pos.0 < 7 {
+                    let capture_pos = position_from_xy(pos.0 + 1, next_one_y);
+                    if let Some(to_capture) = game_state.board.get_piece(capture_pos) {
+                        if to_capture.color != self.color {
+                            moves.push(Move {
+                                from: self.position,
+                                to: capture_pos,
+                                move_type: MoveType::Capture
+                            })
+                        }
+                    }
+                }
+
+                if pos.0 > 0 {
+                    let capture_pos = position_from_xy(pos.0 - 1, next_one_y);
+                    if let Some(to_capture) = game_state.board.get_piece(capture_pos) {
+                        if to_capture.color != self.color {
+                            moves.push(Move {
+                                from: self.position,
+                                to: capture_pos,
+                                move_type: MoveType::Capture
+                            });
+                        }
                     }
                 }
             },
@@ -213,8 +351,13 @@ impl Piece {
                     let new_pos = (pos.0 as i8 + m.0, pos.1 as i8 + m.1);
                     if position_xy_inside_s(new_pos.0, new_pos.1) {
                         let piece = game_state.board.get_piece(position_from_xy(new_pos.0 as u8, new_pos.1 as u8));
+                        let capture_piece = piece.is_some() && piece.unwrap().color != self.color;
                         if piece.is_none() || piece.unwrap().color != self.color {
-                            moves.push(Move::new(self.position, position_from_xy(new_pos.0 as u8, new_pos.1 as u8)));
+                            moves.push(Move {
+                                from: self.position,
+                                to: position_from_xy(new_pos.0 as u8, new_pos.1 as u8),
+                                move_type: if capture_piece { MoveType::Capture } else { MoveType::Quite }
+                            });
                         }
                     }
                 }
@@ -233,8 +376,14 @@ impl Piece {
                         pos = (pos.0 as i8 + current_offset.0, pos.1 as i8 + current_offset.1);
                         if position_xy_inside_s(pos.0, pos.1) {
                             let piece = game_state.board.get_piece(position_from_xy(pos.0 as u8, pos.1 as u8));
+                            let capture_piece = piece.is_some() && piece.unwrap().color != self.color;
+
                             if piece.is_none() || piece.unwrap().color != self.color {
-                                moves.push(Move::new(self.position, position_from_xy(pos.0 as u8, pos.1 as u8)));
+                                moves.push(Move {
+                                    from: self.position,
+                                    to: position_from_xy(pos.0 as u8, pos.1 as u8),
+                                    move_type: if capture_piece { MoveType::Capture } else { MoveType::Quite }
+                                });
                             }
                             if piece.is_some() {
                                 break;
@@ -259,8 +408,14 @@ impl Piece {
                         pos = (pos.0 as i8 + current_offset.0, pos.1 as i8 + current_offset.1);
                         if position_xy_inside_s(pos.0, pos.1) {
                             let piece = game_state.board.get_piece(position_from_xy(pos.0 as u8, pos.1 as u8));
+                            let capture_piece = piece.is_some() && piece.unwrap().color != self.color;
+
                             if piece.is_none() || piece.unwrap().color != self.color {
-                                moves.push(Move::new(self.position, position_from_xy(pos.0 as u8, pos.1 as u8)));
+                                moves.push(Move {
+                                    from: self.position,
+                                    to: position_from_xy(pos.0 as u8, pos.1 as u8),
+                                    move_type: if capture_piece { MoveType::Capture } else { MoveType::Quite }
+                                });
                             }
                             if piece.is_some() {
                                 break;
@@ -289,8 +444,14 @@ impl Piece {
                         pos = (pos.0 as i8 + current_offset.0, pos.1 as i8 + current_offset.1);
                         if position_xy_inside_s(pos.0, pos.1) {
                             let piece = game_state.board.get_piece(position_from_xy(pos.0 as u8, pos.1 as u8));
+                            let capture_piece = piece.is_some() && piece.unwrap().color != self.color;
+
                             if piece.is_none() || piece.unwrap().color != self.color {
-                                moves.push(Move::new(self.position, position_from_xy(pos.0 as u8, pos.1 as u8)));
+                                moves.push(Move {
+                                    from: self.position,
+                                    to: position_from_xy(pos.0 as u8, pos.1 as u8),
+                                    move_type: if capture_piece { MoveType::Capture } else { MoveType::Quite }
+                                });
                             }
                             if piece.is_some() {
                                 break;
@@ -317,10 +478,70 @@ impl Piece {
                     let pos = (pos.0 as i8 + current_offset.0, pos.1 as i8 + current_offset.1);
                     if position_xy_inside_s(pos.0, pos.1) {
                         let piece = game_state.board.get_piece(position_from_xy(pos.0 as u8, pos.1 as u8));
+                        let capture_piece = piece.is_some() && piece.unwrap().color != self.color;
+
                         if piece.is_none() || piece.unwrap().color != self.color {
-                            moves.push(Move::new(self.position, position_from_xy(pos.0 as u8, pos.1 as u8)));
+                            moves.push(Move {
+                                from: self.position,
+                                to: position_from_xy(pos.0 as u8, pos.1 as u8),
+                                move_type: if capture_piece { MoveType::Capture } else { MoveType::Quite }
+                            });
                         }
                     }
+                }
+            
+                // Check casteling
+                match self.color {
+                    Team::White => {
+                        if game_state.castle_state & casteling::WHITE_KING_SIDE != 0 {
+                            if game_state.board.is_free(5) && 
+                                game_state.board.is_free(6) {
+                                // The way is free to castle
+                                moves.push(Move {
+                                    from: self.position,
+                                    to: 6,
+                                    move_type: MoveType::KingCastle
+                                });
+                            }
+                        }
+                        if game_state.castle_state & casteling::WHITE_QUEEN_SIDE != 0 {
+                            if game_state.board.is_free(1) && 
+                                game_state.board.is_free(2) &&
+                                game_state.board.is_free(3) {
+                                    moves.push(Move {
+                                        from: self.position,
+                                        to: 2,
+                                        move_type: MoveType::QueenCastle
+                                    });
+                            }
+                        }
+                    },
+                    Team::Black => {
+                        // | 56| 57| 58| 59| 60| 61| 62| 63|
+                        if game_state.castle_state & casteling::BLACK_KING_SIDE != 0 {
+                            if game_state.board.is_free(61) &&
+                                game_state.board.is_free(62) 
+                            {
+                                moves.push(Move {
+                                    from: self.position,
+                                    to: 62,
+                                    move_type: MoveType::KingCastle
+                                });
+                            }
+                        }
+                        if game_state.castle_state & casteling::BLACK_QUEEN_SIDE != 0 {
+                            if game_state.board.is_free(59) &&
+                                game_state.board.is_free(58) && 
+                                game_state.board.is_free(57) 
+                            {
+                                moves.push(Move {
+                                    from: self.position,
+                                    to: 58,
+                                    move_type: MoveType::QueenCastle
+                                });  
+                            }
+                        }
+                    },
                 }
             },
         }
@@ -362,6 +583,25 @@ impl Board {
             return Some(piece.clone());
         }
         return None;
+    }
+
+    fn move_piece(&mut self, _move: Move) {
+        if let Some(piece_to_move) = self.get_piece(_move.from) {
+            self.squares[_move.to as usize] = Some(Piece {
+                position: _move.to,
+                ..piece_to_move
+            });
+            self.squares[_move.from as usize] = None;
+        }
+
+    }
+
+    fn is_ocupied(&self, position: u8) -> bool {
+        return self.get_piece(position).is_some();
+    }
+
+    fn is_free(&self, position: u8) -> bool {
+        return !self.is_ocupied(position);
     }
 
     fn print_custom(&self, square_callback: &dyn Fn(u8, Option<Piece>) -> char) {
@@ -436,10 +676,11 @@ fn get_position_from_string(position: &str) -> u8 {
 }
 
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Copy, Clone, PartialEq)]
 enum MoveType {
     #[default] Quite,
     Capture,
+    DoublePawnPush,
     EnPassant,
     KingCastle,
     QueenCastle,
@@ -449,7 +690,17 @@ enum MoveType {
     QueenPromotion,
 }
 
-#[derive(Default, Debug)]
+impl MoveType {
+    fn is_castle(&self) -> bool {
+        match self {
+            MoveType::KingCastle => true,
+            MoveType::QueenCastle => true,
+            _ => false
+        }
+    }
+}
+
+#[derive(Default, Debug, Copy, Clone)]
 pub struct Move {
     from: u8,
     to: u8,
@@ -457,8 +708,12 @@ pub struct Move {
 }
 
 impl Move {
-    pub fn new(from: u8, to: u8) -> Move {
-        return Move {from, to, ..Default::default()};
+    pub const fn new(from : u8, to : u8) -> Move {
+        Move {
+            from,
+            to,
+            move_type: MoveType::Quite,
+        }
     }
 }
 
@@ -467,6 +722,7 @@ enum InputMessage {
     ShowMoves(u8),
     ShowTeam(Team),
     ShowBoard,
+    LoadFen(String),
     Quit,
     None
 }
@@ -482,26 +738,28 @@ fn get_input() -> InputMessage {
         return InputMessage::Quit;
     }
 
-    let input: Vec<&str> = input.split(" ").collect();
-    if input[0] == "m" {
-        if input.len() != 3 {
+    let args: Vec<&str> = input.split(" ").collect();
+    if args[0] == "m" {
+        if args.len() != 3 {
             return InputMessage::None;
         }
         
-        let from = get_position_from_string(input[1]);
-        let to = get_position_from_string(input[2]);
-        return InputMessage::Move(Move {from, to, ..Default::default()});
-    } else if input[0] == "s" {
-        if input.len() != 2 {
+        let from = get_position_from_string(args[1]);
+        let to = get_position_from_string(args[2]);
+        return InputMessage::Move(Move::new(from, to));
+    } else if args[0] == "s" {
+        if args.len() != 2 {
             return InputMessage::ShowBoard;
         }
-        if input[1].to_uppercase() == "BLACK" || input[1].to_uppercase() == "WHITE" {
-            let team = if input[1].to_uppercase() == "BLACK" { Team::Black } else { Team::White };
+        if args[1].to_uppercase() == "BLACK" || args[1].to_uppercase() == "WHITE" {
+            let team = if args[1].to_uppercase() == "BLACK" { Team::Black } else { Team::White };
             return InputMessage::ShowTeam(team);
         } else {
-            let position = get_position_from_string(input[1]);
+            let position = get_position_from_string(args[1]);
             return InputMessage::ShowMoves(position);
         }
+    } else if args[0] == "fen" {
+        return InputMessage::LoadFen(input[4..].to_string());
     }
     return InputMessage::None;
 }
@@ -513,7 +771,11 @@ fn print_possible_moves(board: &Board, moves: &Vec<Move>) {
             // If the current move is the current position
             if m.to ==  pos {
                 // Print the move
-                return 'X';
+                if m.move_type == MoveType::Capture {
+                    return 'X';
+                }
+
+                return '+';
             }
         }
         if let Some(piece) = square {
@@ -526,6 +788,11 @@ fn print_possible_moves(board: &Board, moves: &Vec<Move>) {
 }
 
 fn main() {
+    let casteling_state = casteling::ALL;
+
+    println!("Casteling: {:b}", casteling_state);
+    println!("Casteling: {:b}", casteling_state - (casteling::WHITE_KING_SIDE | casteling::WHITE_QUEEN_SIDE));
+    
     let mut game_state = GameState::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
     
 
@@ -542,6 +809,8 @@ fn main() {
                 if let Some(piece) = game_state.board.get_piece(pos) {
                     let moves = piece.get_possible_moves(&game_state);
                     print_possible_moves(&game_state.board, &moves);
+                } else {
+                    println!("Could not find piece at position!");
                 }
             },
             InputMessage::ShowTeam(team) => {
@@ -549,6 +818,10 @@ fn main() {
                 print_possible_moves(&game_state.board, &moves);
             },
             InputMessage::ShowBoard => {
+                println!("{}", game_state.board);
+            },
+            InputMessage::LoadFen(str) => {
+                game_state = GameState::from_fen(&str);
                 println!("{}", game_state.board);
             },
             InputMessage::None => { },
