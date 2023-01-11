@@ -1,4 +1,4 @@
-use std::{io, any::Any};
+use std::{io::{self, Write}, any::Any, fs::File, path};
 
 /**
  * 
@@ -126,6 +126,63 @@ impl GameState {
             en_passent,
             castle_state,
         }
+    }
+
+    pub fn to_fen_str(&self) -> String {
+        let mut fen = String::new();
+        for y in 0..8 {
+            let mut empty_count = 0;
+            for x in 0..8 {
+                let position = position_from_xy(x, 7 - y);
+                let square = self.board.squares[position as usize];
+                if square.is_none() {
+                    empty_count += 1;
+                } else {
+                    if empty_count > 0 {
+                        fen.push_str(&empty_count.to_string());
+                        empty_count = 0;
+                    }
+                    let piece = square.unwrap();
+                    let piece_char = match piece.piece_type {
+                        PieceType::Pawn => 'P',
+                        PieceType::Knight => 'N',
+                        PieceType::Bishop => 'B',
+                        PieceType::Rook => 'R',
+                        PieceType::Queen => 'Q',
+                        PieceType::King => 'K',
+                    };
+                    fen.push(if piece.color == Team::White { piece_char } else { piece_char.to_ascii_lowercase() });
+                }
+            }
+            if empty_count > 0 {
+                fen.push_str(&empty_count.to_string());
+            }
+            if y < 7 {
+                fen.push('/');
+            }
+        }
+        fen.push(' ');
+        fen.push(if self.turn == Team::White { 'w' } else { 'b' });
+        fen.push(' ');
+        if self.castle_state == 0 {
+            fen.push('-');
+        } else {
+            if self.castle_state & casteling::WHITE_KING_SIDE != 0 { fen.push('K'); }
+            if self.castle_state & casteling::WHITE_QUEEN_SIDE != 0 { fen.push('Q'); }
+            if self.castle_state & casteling::BLACK_KING_SIDE != 0 { fen.push('k'); }
+            if self.castle_state & casteling::BLACK_QUEEN_SIDE != 0 { fen.push('q'); }
+        }
+        fen.push(' ');
+        if self.en_passent.is_none() {
+            fen.push('-');
+        } else {
+            let position = self.en_passent.unwrap();
+            let x = position % 8;
+            let y = position / 8;
+            fen.push((x as u8 + 'a' as u8) as char);
+            fen.push((y as u8 + '1' as u8) as char);
+        }
+        fen
     }
 
     pub fn make_move(&mut self, m: Move) {
@@ -752,6 +809,7 @@ enum InputMessage {
     ShowTeam(Team),
     ShowBoard,
     LoadFen(String),
+    ShowFen,
     Quit,
     None
 }
@@ -788,6 +846,9 @@ fn get_input() -> InputMessage {
             return InputMessage::ShowMoves(position);
         }
     } else if args[0] == "fen" {
+        if args.len() == 1 {
+            return InputMessage::ShowFen;
+        }
         return InputMessage::LoadFen(input[4..].to_string());
     }
     return InputMessage::None;
@@ -850,6 +911,9 @@ fn main() {
             InputMessage::LoadFen(str) => {
                 game_state = GameState::from_fen(&str);
                 println!("{}", game_state.board);
+            },
+            InputMessage::ShowFen => {
+                println!("{}", game_state.to_fen_str());
             },
             InputMessage::None => { },
             InputMessage::Quit => {
