@@ -322,13 +322,11 @@ impl GameState {
             return;
         }
         
-        self.state_stack.pop();
-        println!("Unmake move: {:?} {:?}", self.state_stack, current_move);
-        let current_state = self.state_stack.last();
-
+        
         // We have a valid move!
-        let current_pos = position_to_xy(piece_to_move.position);
+        let current_state = self.state.clone();
 
+        
         match current_move.move_type {
             MoveType::BishopPromotion | MoveType::KnightPromotion | MoveType::QueenPromotion | MoveType::RookPromotion => {
                 self.board.squares[current_move.from as usize] = Some(Piece::new(piece_to_move.color, PieceType::Pawn, current_move.from));
@@ -341,10 +339,10 @@ impl GameState {
                 self.board.squares[current_move.to as usize] = None;
             },
             MoveType::Capture => {
-                let capture_type = if let Some(capture_type) = current_state.unwrap().captured_piece {
+                let capture_type = if let Some(capture_type) = current_state.captured_piece {
                     capture_type
                 } else {
-                    println!("No capture type! {:?}", current_state.unwrap());
+                    println!("No capture type! {:?}", current_state);
                     PieceType::Pawn
                 };
                 self.board.squares[current_move.from as usize] = Some(Piece {position: current_move.from, ..piece_to_move});
@@ -357,10 +355,7 @@ impl GameState {
         }
         
 
-
-        if let Some(state) = current_state {
-            self.state = state.clone();
-        }
+        self.state = self.state_stack.pop().unwrap();
         self.turn = self.turn.other();
 
         self.move_stack.pop();
@@ -394,10 +389,7 @@ impl GameState {
             if debug {
                 println!("{}", self.board);
             }
-            count += 1;
-            if depth > 1 {
-                count += self.run_test(depth - 1, debug);
-            }
+            count += self.run_test(depth - 1, debug);
             self.unmake_move(*m);
         }
         return count;
