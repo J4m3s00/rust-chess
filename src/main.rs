@@ -79,11 +79,12 @@ pub struct GameState {
     state: GameStateData,
     state_stack: Vec<GameStateData>,
     move_stack: Vec<Move>,
+    enemy_attacks: u64,
 }
 
 impl GameState {
     pub const fn new() -> GameState {
-        GameState { board: Board::new(), turn: Team::White, state: GameStateData { en_passent: None, castle_state: casteling::ALL, captured_piece: None}, state_stack: Vec::new(), move_stack: Vec::new() }
+        GameState { board: Board::new(), turn: Team::White, state: GameStateData { en_passent: None, castle_state: casteling::ALL, captured_piece: None}, state_stack: Vec::new(), move_stack: Vec::new(), enemy_attacks: 0 }
     }
 
     pub fn from_fen(fen: &str) -> GameState {
@@ -138,7 +139,7 @@ impl GameState {
             en_passent = Some(position_from_xy(en_passent_fen.chars().nth(0).unwrap() as u8 - 'a' as u8, en_passent_fen.chars().nth(1).unwrap() as u8 - '1' as u8));
         }
 
-        GameState {
+        let mut result = GameState {
             board,
             turn: if turn_fen == "w" { Team::White } else { Team::Black },
             state: GameStateData {
@@ -148,7 +149,10 @@ impl GameState {
             },
             state_stack: Default::default(),
             move_stack: Default::default(),
-        }
+            enemy_attacks: 0
+        };
+        result.update_capture_squares();
+        return result;
     }
 
     pub fn to_fen_str(&self) -> String {
@@ -222,7 +226,7 @@ impl GameState {
             println!("The piece you want to move is not the correct team!");
             return;
         }
-        let piece_possible_moves = piece_to_move.get_possible_moves(self);
+        let piece_possible_moves = piece_to_move.get_possible_moves(self, false);
         let current_found_move_opt = piece_possible_moves.into_iter().find(|fm| {fm.to == m.to});
         if current_found_move_opt.is_none() {
             println!("The move is not possible with current position on the board! {:?}\nFen:{}", m, self.to_fen_str());
@@ -308,6 +312,8 @@ impl GameState {
         self.board.move_piece(current_move);
 
         self.turn = self.turn.other();
+
+        self.update_capture_squares();
     }
 
     pub fn unmake_move(&mut self, current_move: Move) {
@@ -359,14 +365,30 @@ impl GameState {
         self.turn = self.turn.other();
 
         self.move_stack.pop();
+
+        self.update_capture_squares();
     }
 
-    pub fn get_possible_moves(&self, team : Team) -> Vec<Move> {
+    pub fn get_capturable_squares(&self, team : Team) -> u64 {
+        let mut squares : u64 = 0;
+        let moves = self.get_possible_moves(team, true);
+        for m in moves.iter() {
+            squares |= 1 << m.to;
+        }
+        return squares;
+    }
+
+    pub fn update_capture_squares(&mut self) -> &Self {
+        self.enemy_attacks = self.get_capturable_squares(self.turn.other());
+        self
+    }
+    
+    pub fn get_possible_moves(&self, team : Team, only_captures : bool) -> Vec<Move> {
         let mut moves : Vec<Move> = Vec::new();
         for square in self.board.squares {
             if let Some(square) = square {
                 if square.color == team {
-                    let mut piece_moves = square.get_possible_moves(self);
+                    let mut piece_moves = square.get_possible_moves(self, only_captures);
                     moves.append(&mut piece_moves);
                 }
             }
@@ -381,7 +403,7 @@ impl GameState {
             return 1;
         }
 
-        let moves = self.get_possible_moves(self.turn);
+        let moves = self.get_possible_moves(self.turn, false);
 
         let mut count = 0;
         for m in moves.iter() {
@@ -390,7 +412,7 @@ impl GameState {
             let add = self.run_test(depth - 1, false);
 
             if debug {
-                println!("{} {}", m.to_string(), add);
+                println!("{}: {}", m.to_string(), add);
             }
 
             count += add;
@@ -446,7 +468,7 @@ impl Piece {
     }
 
 
-    fn get_possible_moves(&self, game_state: &GameState) -> Vec<Move> {
+    fn get_possible_moves(&self, game_state: &GameState, only_captures : bool) -> Vec<Move> {
         let mut moves = Vec::new();
         let pos = position_to_xy(self.position);
 
@@ -456,9 +478,9 @@ impl Piece {
                 let next_one_y = if self.color == Team::White { pos.1 + 1 } else { pos.1 - 1 };
                 let next_two_y = if self.color == Team::White { pos.1 + 2 } else { pos.1 - 2 };
                 let next_is_last = if self.color == Team::White { pos.1 == 6 } else { pos.1 == 1 };
-
+                
                 // Moving forward
-                if game_state.board.get_piece(position_from_xy(pos.0, next_one_y)).is_none() {
+                if !only_captures && game_state.board.get_piece(position_from_xy(pos.0, next_one_y)).is_none() {
                     if next_is_last {
                         // We add all the promotion moves to the list for now
                         moves.push(Move {
@@ -497,8 +519,8 @@ impl Piece {
                         });
                     }
                 }
-                // Capture
 
+                // Capture
                 if pos.0 < 7 {
                     let capture_pos = position_from_xy(pos.0 + 1, next_one_y);
                     let is_enpassant = if let Some(en_passent) = game_state.state.en_passent {
@@ -509,11 +531,35 @@ impl Piece {
 
                     if let Some(to_capture) = game_state.board.get_piece(capture_pos) {
                         if to_capture.color != self.color {
-                            moves.push(Move {
-                                from: self.position,
-                                to: capture_pos,
-                                move_type: MoveType::Capture
-                            })
+                            if next_is_last {
+                                // We add all the promotion moves to the list for now
+                                moves.push(Move {
+                                    from: self.position,
+                                    to: capture_pos,
+                                    move_type: MoveType::RookPromotionCapture
+                                });
+                                moves.push(Move {
+                                    from: self.position,
+                                    to: capture_pos,
+                                    move_type: MoveType::QueenPromotionCapture
+                                });
+                                moves.push(Move {
+                                    from: self.position,
+                                    to: capture_pos,
+                                    move_type: MoveType::BishopPromotionCapture
+                                });
+                                moves.push(Move {
+                                    from: self.position,
+                                    to: capture_pos,
+                                    move_type: MoveType::KnightPromotionCapture
+                                });
+                            } else {
+                                moves.push(Move {
+                                    from: self.position,
+                                    to: capture_pos,
+                                    move_type: MoveType::Capture
+                                })
+                            }
                         }
                     }
                     else if is_enpassant {
@@ -683,15 +729,17 @@ impl Piece {
                     };
                     let pos = (pos.0 as i8 + current_offset.0, pos.1 as i8 + current_offset.1);
                     if position_xy_inside_s(pos.0, pos.1) {
-                        let piece = game_state.board.get_piece(position_from_xy(pos.0 as u8, pos.1 as u8));
-                        let capture_piece = piece.is_some() && piece.unwrap().color != self.color;
+                        if game_state.enemy_attacks & position_to_bitboard(position_from_xy(pos.0 as u8, pos.1 as u8)) == 0 {
+                            let piece = game_state.board.get_piece(position_from_xy(pos.0 as u8, pos.1 as u8));
+                            let capture_piece = piece.is_some() && piece.unwrap().color != self.color;
 
-                        if piece.is_none() || piece.unwrap().color != self.color {
-                            moves.push(Move {
-                                from: self.position,
-                                to: position_from_xy(pos.0 as u8, pos.1 as u8),
-                                move_type: if capture_piece { MoveType::Capture } else { MoveType::Quite }
-                            });
+                            if piece.is_none() || piece.unwrap().color != self.color {
+                                moves.push(Move {
+                                    from: self.position,
+                                    to: position_from_xy(pos.0 as u8, pos.1 as u8),
+                                    move_type: if capture_piece { MoveType::Capture } else { MoveType::Quite }
+                                });
+                            }
                         }
                     }
                 }
@@ -860,6 +908,11 @@ fn position_to_xy(position: u8) -> (u8, u8) {
     return (position % 8, position / 8);
 }
 
+fn position_to_bitboard(position: u8) -> u64 {
+    assert!(position < 64);
+    return 1 << position;
+}
+
 fn position_xy_inside_s(x: i8, y: i8) -> bool {
     return x >= 0 && x < 8 && y >= 0 && y < 8;
 }
@@ -893,6 +946,10 @@ enum MoveType {
     BishopPromotion,
     RookPromotion,
     QueenPromotion,
+    KnightPromotionCapture,
+    BishopPromotionCapture,
+    RookPromotionCapture,
+    QueenPromotionCapture,
 }
 
 impl MoveType {
@@ -960,7 +1017,7 @@ fn get_input() -> InputMessage {
     let mut input = String::new();
     io::stdin().read_line(&mut input).expect("Failed to read line");
     let input = input.trim();
-    if input == "quit" {
+    if input == "quit" || input == "q" {
         return InputMessage::Quit;
     }
     if input.len() == 0 {
@@ -1053,14 +1110,14 @@ fn main() {
             },
             InputMessage::ShowMoves(pos) => {
                 if let Some(piece) = game_state.board.get_piece(pos) {
-                    let moves = piece.get_possible_moves(&game_state);
+                    let moves = piece.get_possible_moves(&game_state, false);
                     print_possible_moves(&game_state.board, &moves);
                 } else {
                     println!("Could not find piece at position!");
                 }
             },
             InputMessage::ShowTeam(team) => {
-                let moves = game_state.get_possible_moves(team);
+                let moves = game_state.get_possible_moves(team, false);
                 print_possible_moves(&game_state.board, &moves);
             },
             InputMessage::ShowBoard => {
