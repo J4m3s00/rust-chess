@@ -386,10 +386,14 @@ impl GameState {
         let mut count = 0;
         for m in moves.iter() {
             self.make_move(*m);
+            
+            let add = self.run_test(depth - 1, false);
+
             if debug {
-                println!("{}", self.board);
+                println!("{} {}", m.to_string(), add);
             }
-            count += self.run_test(depth - 1, debug);
+
+            count += add;
             self.unmake_move(*m);
         }
         return count;
@@ -915,6 +919,27 @@ impl Move {
             to,
             move_type: MoveType::Quite,
         }
+    }
+
+    pub fn to_string(&self) -> String {
+        let mut fen: String = String::new();
+
+        let position = self.from;
+        let x = position % 8;
+        let y = position / 8;
+
+        fen.push((x as u8 + 'a' as u8) as char);
+        fen.push((y as u8 + '1' as u8) as char);
+
+        let position = self.to;
+        let x = position % 8;
+        let y = position / 8;
+
+        fen.push((x as u8 + 'a' as u8) as char);
+        fen.push((y as u8 + '1' as u8) as char);
+
+
+        fen
     }
 }
 
