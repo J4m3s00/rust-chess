@@ -1,83 +1,5 @@
-use crate::precompute::{NUM_SQUARES_TO_EDGE, DIRECTION_OFFSETS};
+use crate::{precompute::{NUM_SQUARES_TO_EDGE, DIRECTION_OFFSETS}, base_types::{Color, PieceType, Position}, moves::{Move, MoveType}};
 
-#[derive(Copy, Clone)]
-pub enum PieceType {
-    Pawn,
-    Knight,
-    Bishop,
-    Rook,
-    Queen,
-    King,
-}
-
-#[derive(Copy, Clone)]
-pub enum Color {
-    White,
-    Black,
-}
-
-impl Color {
-    pub fn opposite(&self) -> Color {
-        match self {
-            Color::White => Color::Black,
-            Color::Black => Color::White,
-        }
-    }
-}
-
-#[derive(PartialEq, PartialOrd, Copy, Clone, Debug)]
-pub struct Position(u8);
-
-impl Position {
-    pub fn new(position: u8) -> Position {
-        Position(position)
-    }
-
-    pub fn get_row(&self) -> u8 {
-        self.0 / 8
-    }
-
-    pub fn get_col(&self) -> u8 {
-        self.0 % 8
-    }
-
-    pub fn get_change(&self, change: i8) -> Position {
-        Position((self.0 as i8 + change) as u8)
-    }
-
-    pub fn is_valid(&self) -> bool {
-        self.0 < 64
-    }
-
-    pub fn index(&self) -> usize {
-        self.0 as usize
-    }
-}
-
-impl From<(u8, u8)> for Position {
-    fn from((col, row): (u8, u8)) -> Self {
-        Position(row * 8 + col)
-    }
-}
-
-impl From<String> for Position {
-    fn from(str: String) -> Self {
-        // Validating input
-        if str.len() != 2 {
-            panic!("Position String is not 2 characters long");
-        }
-
-        let col = str.chars().nth(0).unwrap() as u8 - 'a' as u8;
-        let row = str.chars().nth(1).unwrap() as u8 - '1' as u8;
-
-        // Validate values
-        if col > 7 || row > 7 {
-            panic!("Invalid position string");
-        }
-
-        Position::from((col, row))
-    }
-}
 
 #[derive(Copy, Clone)]
 pub struct Piece {
@@ -92,6 +14,56 @@ impl Piece {
             color,
             piece_type,
             position,
+        }
+    }
+
+    pub fn move_all_directions(&self, callback : &mut dyn FnMut(Position) -> bool) {
+        match self.piece_type {
+            PieceType::Pawn => {
+                if let Color::White = self.color  {
+                    callback(self.position.get_change(8));
+                    if self.position.get_row() == 1 {
+                        callback(self.position.get_change(16));
+                    }
+                } else {
+                    callback(self.position.get_change(-8));
+                    if self.position.get_row() == 6 {
+                        callback(self.position.get_change(-16));
+                    }
+                }
+            },
+            PieceType::Knight => {
+                let x = self.position.get_col() as i8;
+                let y = self.position.get_row() as i8;
+
+
+                let positions = [
+                    Position::from((x + 1, y + 2)),
+                    Position::from((x + 1, y - 2)),
+                    Position::from((x + 2, y + 1)),
+                    Position::from((x + 2, y - 1)),
+                    Position::from((x - 1, y + 2)),
+                    Position::from((x - 1, y - 2)),
+                    Position::from((x - 2, y + 1)),
+                    Position::from((x - 2, y - 1))
+                ];
+
+                for pos in positions {
+                    if pos.is_valid() {
+                        callback(pos);
+                    }
+                }
+            },
+            PieceType::Bishop => {
+                move_sliding_squares(self.position, 4, 8, callback);
+            },
+            PieceType::Rook => {
+                move_sliding_squares(self.position, 0, 4, callback);
+            },
+            PieceType::Queen => {
+                move_sliding_squares(self.position, 0, 8, callback);
+            },
+            PieceType::King => {},
         }
     }
 
@@ -115,13 +87,13 @@ impl Piece {
                 
             }
             PieceType::Bishop => {
-                squares.append(&mut get_sliding_squares(self.position, 4, 8));
+                
             }
             PieceType::Rook => {
-                squares.append(&mut get_sliding_squares(self.position, 0, 4));
+                
             }
             PieceType::Queen => {
-                squares.append(&mut get_sliding_squares(self.position, 0, 8));
+                
             }
             PieceType::King => {
                 
@@ -130,6 +102,17 @@ impl Piece {
 
         squares
     }
+
+    pub fn get_char(&self) -> char {
+        match self.piece_type {
+            PieceType::Pawn => if let Color::White = self.color { 'P' } else { 'p' },
+            PieceType::Rook => if let Color::White = self.color { 'R' } else { 'r' },
+            PieceType::Knight => if let Color::White = self.color { 'N' } else { 'n' },
+            PieceType::Bishop => if let Color::White = self.color { 'B' } else { 'b' },
+            PieceType::Queen => if let Color::White = self.color { 'Q' } else { 'q' },
+            PieceType::King => if let Color::White = self.color { 'K' } else { 'k' },
+        }
+    }
 }
 
 /**
@@ -137,15 +120,20 @@ impl Piece {
  * The start_dir and end_dir are used to determine which directions to check.
  * 0 - 4 are the 4 cardinal directions, 4 - 8 are the 4 diagonal directions.
  */
-fn get_sliding_squares(position: Position, start_dir: u8, end_dir: u8) -> Vec<Position> {
-    let mut result : Vec<Position> = Vec::new();
+fn move_sliding_squares(position: Position, start_dir: u8, end_dir: u8, callback : &mut dyn FnMut(Position) -> bool) {
     for i in start_dir .. end_dir {
-        for j in 0 .. NUM_SQUARES_TO_EDGE[position.index()][i as usize] {
-            let square = position.get_change(DIRECTION_OFFSETS[i as usize]);
-            if square.is_valid() {
-                result.push(square);
+        let mut current_position = position;
+        let direction_offset = DIRECTION_OFFSETS[i as usize];
+        let num_square_to_edge = NUM_SQUARES_TO_EDGE[position.index()][i as usize];
+        println!("Direction of {i} = {direction_offset} and num square = {num_square_to_edge}");
+
+        for _ in 0 .. num_square_to_edge {
+            current_position = current_position.get_change(direction_offset);
+            if current_position.is_valid() {
+                if !callback(current_position) {
+                    break;
+                }
             }
         }
     }
-    result
 }

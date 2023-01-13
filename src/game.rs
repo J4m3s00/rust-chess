@@ -1,4 +1,4 @@
-use crate::{board::Board, piece::{Color, Position, PieceType, Piece}, moves::Move};
+use crate::{board::Board, piece::{Piece}, moves::{Move, MoveType}, base_types::{Color, Position, PieceType}};
 
 pub struct Game {
     pub board: Board,
@@ -30,8 +30,52 @@ impl Default for Game {
 
 impl Game {
     pub fn make_move(&mut self, mov : Move) {
+        let moving_piece = self.board.get_piece(mov.from);
+        if moving_piece.is_none() {
+            println!("No piece to move selected!");
+            return;
+        }
+        let moving_piece = moving_piece.unwrap();
+        if moving_piece.color != self.turn {
+            println!("Piece is not the right color!");
+            return;
+        }
+
+
+
         self.board.move_piece(mov.from, mov.to);
         self.turn = self.turn.opposite();
+    }
+
+    pub fn get_possible_team_moves(&self, c : Color) -> Vec<Move> {
+        let mut moves : Vec<Move> = Vec::new();
+        for piece in self.board.pieces {
+            if let Some(piece) = piece {
+                if piece.color == c {
+                    moves.append(&mut self.get_possible_piece_moves(piece));
+                }
+            }
+        }
+        moves
+    }
+
+    pub fn get_possible_piece_moves(&self, piece : Piece) -> Vec<Move> {
+        let mut moves : Vec<Move> = Vec::new();
+
+        piece.move_all_directions(&mut|position : Position| -> bool {
+            let piece_on_position = self.board.get_piece(position);
+            if piece_on_position.is_some() {
+                return false;
+            }
+            moves.push(Move {
+                from: piece.position,
+                to: position,
+                move_type: MoveType::Quite
+            });
+            return true;
+        });
+
+        moves
     }
 
     pub fn from_fen(&mut self, fen: &str) {

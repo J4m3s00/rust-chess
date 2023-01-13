@@ -3,8 +3,9 @@ use std::io;
 use board::Board;
 use game::Game;
 use moves::Move;
-use piece::{Color, Position};
+use base_types::{Color, Position};
 
+mod base_types;
 mod precompute;
 mod moves;
 mod piece;
@@ -82,10 +83,43 @@ fn main(){
     loop {
         let input = get_input();
         match input {
+            InputMessage::ShowFen => {
+                println!("{}", game.to_fen());
+            }
+            InputMessage::LoadFen(fen) => {
+                game.from_fen(fen.as_str());
+            }
             InputMessage::Move(mov) => {
                 game.make_move(mov);
                 game.board.print();
-            },
+            }
+            InputMessage::ShowMoves(pos) => {
+                if let Some(piece) = game.board.get_piece(pos) {
+                    let moves = game.get_possible_piece_moves(piece);
+                    game.board.print_custom(&|pos| -> char {
+                        if let Some(piece) = game.board.get_piece(pos) {
+                            return piece.get_char();
+                        }
+                        if let Some(found_move) = moves.iter().find(|m| {m.to == pos}) {
+                            return 'x';
+                        }
+                        return ' ';
+                    });
+                }
+            }
+            InputMessage::ShowTeam(color) => {
+                let moves = game.get_possible_team_moves(color);
+                game.board.print_custom(&|pos| -> char {
+                    if let Some(piece) = game.board.get_piece(pos) {
+                        return piece.get_char();
+                    }
+
+                    if let Some(found_move) = moves.iter().find(|m| {m.to == pos}) {
+                        return 'x';
+                    }
+                    return ' ';
+                });
+            }
             InputMessage::ShowBoard => game.board.print(),
             InputMessage::Quit => break,
             _ => ()

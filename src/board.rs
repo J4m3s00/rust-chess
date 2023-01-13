@@ -1,4 +1,5 @@
-use crate::piece::{Piece, Position, PieceType, Color};
+use crate::piece::{Piece};
+use crate::base_types::{Position, Color, PieceType};
 
 pub struct Board {
     pub pieces: [Option<Piece>; 64],
@@ -40,12 +41,12 @@ impl Board {
         self.get_piece(position).is_some()
     }
 
-    pub fn print_custom(&self, callback: &dyn Fn(Option<Piece>) -> char) {
+    pub fn print_custom(&self, callback: &dyn Fn(Position) -> char) {
         println!("---------------------------------");
         for i in 0..8{
             print!("|");
             for j in 0..8{
-                print!(" {} |", callback(self.get_piece(Position::from((j, 7 - i)))));
+                print!(" {} |", callback(Position::from((j, 7 - i))));
             }
             println!("");
             println!("---------------------------------");
@@ -53,17 +54,11 @@ impl Board {
     }
 
     pub fn print(&self) { 
-        self.print_custom(&|piece: Option<Piece>| -> char {
+        self.print_custom(&|position| -> char {
+            let piece = self.get_piece(position);
             match piece {
                 Some(piece) => {
-                    match piece.piece_type {
-                        PieceType::Pawn => if let Color::White = piece.color { 'P' } else { 'p' },
-                        PieceType::Rook => if let Color::White = piece.color { 'R' } else { 'r' },
-                        PieceType::Knight => if let Color::White = piece.color { 'N' } else { 'n' },
-                        PieceType::Bishop => if let Color::White = piece.color { 'B' } else { 'b' },
-                        PieceType::Queen => if let Color::White = piece.color { 'Q' } else { 'q' },
-                        PieceType::King => if let Color::White = piece.color { 'K' } else { 'k' },
-                    }
+                    piece.get_char()
                 },
                 None => ' ',
             }

@@ -1,4 +1,4 @@
-use crate::piece::Position;
+use crate::base_types::Position;
 
 
 #[derive(Default, Debug, Copy, Clone, PartialEq)]
