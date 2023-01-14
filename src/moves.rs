@@ -1,4 +1,4 @@
-use crate::base_types::Position;
+use crate::base_types::{Position, PieceType};
 
 
 #[derive(Default, Debug, Copy, Clone, PartialEq)]
@@ -28,7 +28,7 @@ impl MoveType {
         }
     }
 
-    fn is_promotion(&self) -> bool {
+    pub fn is_promotion(&self) -> bool {
         match self {
             MoveType::KnightPromotion => true,
             MoveType::BishopPromotion => true,
@@ -39,6 +39,30 @@ impl MoveType {
             MoveType::RookPromotionCapture => true,
             MoveType::QueenPromotionCapture => true,
             _ => false
+        }
+    }
+
+    pub fn is_promotion_capture(&self) -> bool {
+        match self {
+            MoveType::KnightPromotionCapture => true,
+            MoveType::BishopPromotionCapture => true,
+            MoveType::RookPromotionCapture => true,
+            MoveType::QueenPromotionCapture => true,
+            _ => false
+        }
+    }
+
+    pub fn get_promotion_piece(&self) -> PieceType {
+        match self {
+            MoveType::KnightPromotion => PieceType::Knight,
+            MoveType::BishopPromotion => PieceType::Bishop,
+            MoveType::RookPromotion => PieceType::Rook,
+            MoveType::QueenPromotion => PieceType::Queen,
+            MoveType::KnightPromotionCapture => PieceType::Knight,
+            MoveType::BishopPromotionCapture => PieceType::Bishop,
+            MoveType::RookPromotionCapture => PieceType::Rook,
+            MoveType::QueenPromotionCapture => PieceType::Queen,
+            _ => {println!("Error: MoveType::get_promotion_piece() called on non-promotion move"); PieceType::Pawn}
         }
     }
 }
@@ -61,23 +85,7 @@ impl Move {
     }
 
     pub fn to_string(&self) -> String {
-        let mut fen: String = String::new();
-
-        let position = self.from;
-        let x = position.get_col();
-        let y = position.get_row();
-
-        fen.push((x as u8 + 'a' as u8) as char);
-        fen.push((y as u8 + '1' as u8) as char);
-
-        let position = self.to;
-        let x = position.get_col();
-        let y = position.get_row();
-
-        fen.push((x as u8 + 'a' as u8) as char);
-        fen.push((y as u8 + '1' as u8) as char);
-
-        fen
+        return self.from.to_string() + &self.to.to_string();
     }
 
     pub fn from_string(string : &str) -> Move {

@@ -1,36 +1,59 @@
-use crate::{board::Board, piece::{Piece}, moves::{Move, MoveType}, base_types::{Color, Position, PieceType}};
+use std::io::{stdin, Read};
+
+use crate::{board::Board, piece::{Piece, move_sliding_squares}, moves::{Move, MoveType}, base_types::{Color, Position, PieceType}, precompute::get_direction_index};
+
+#[derive(Copy, Clone, Debug)]
+pub struct GameState {
+    pub white_can_castle_kingside: bool,
+    pub white_can_castle_queenside: bool,
+    pub black_can_castle_kingside: bool,
+    pub black_can_castle_queenside: bool,
+    pub en_passant_target: Option<Position>,
+    pub captured_piece: Option<PieceType>,
+}
 
 pub struct Game {
     pub board: Board,
     pub turn: Color,
     pub white_king_position: Position,
     pub black_king_position: Position,
-    pub white_can_castle_kingside: bool,
-    pub white_can_castle_queenside: bool,
-    pub black_can_castle_kingside: bool,
-    pub black_can_castle_queenside: bool,
-    pub en_passant_target: Option<Position>,
+    pub state: GameState,
+    state_stack: Vec<GameState>,
+    moves: Vec<Move>,
+    pub enemy_attacks: u64,
+    pub king_pins: Vec<u64>,
+    pub king_check: u64, // We can only have one check at a time
 }
 
 impl Default for Game {
     fn default() -> Self {
-        Game {
+        let mut result = Game {
             board: Board::new(),
             turn: Color::White,
             white_king_position: Position::from((4, 0)),
             black_king_position: Position::from((4, 7)),
-            white_can_castle_kingside: true,
-            white_can_castle_queenside: true,
-            black_can_castle_kingside: true,
-            black_can_castle_queenside: true,
-            en_passant_target: None,
-        }
+            state: GameState {
+                white_can_castle_kingside: true,
+                white_can_castle_queenside: true,
+                black_can_castle_kingside: true,
+                black_can_castle_queenside: true,
+                en_passant_target: None,
+                captured_piece: None,
+            },
+            state_stack: Vec::new(),
+            moves: Vec::new(),
+            enemy_attacks: 0,
+            king_pins: Vec::new(),
+            king_check: 0,
+        };
+        result.update_position();
+        result
     }
 }
 
 impl Game {
-    pub fn make_move(&mut self, mov : Move) {
-        let moving_piece = self.board.get_piece(mov.from);
+    pub fn make_move(&mut self, from : Position, to : Position) {
+        let moving_piece = self.board.get_piece(from);
         if moving_piece.is_none() {
             println!("No piece to move selected!");
             return;
@@ -40,11 +63,157 @@ impl Game {
             println!("Piece is not the right color!");
             return;
         }
+        let piece_possible_moves = self.get_possible_piece_moves(moving_piece);
+        let current_found_move_opt = piece_possible_moves.into_iter().find(|m| m.to == to);
+        if current_found_move_opt.is_none() {
+            println!("Move is not possible!");
+            return;
+        }
 
 
+        // Valid move
+        let current_found_move = current_found_move_opt.unwrap();
 
-        self.board.move_piece(mov.from, mov.to);
+        self.state_stack.push(self.state);
+        self.moves.push(current_found_move);
+
+
+        // Update castling rights
+        match moving_piece.piece_type {
+            PieceType::King => {
+                if self.turn == Color::White {
+                    self.state.white_can_castle_kingside = false;
+                    self.state.white_can_castle_queenside = false;
+                } else {
+                    self.state.black_can_castle_kingside = false;
+                    self.state.black_can_castle_queenside = false;
+                }
+                match self.turn {
+                    Color::White => self.white_king_position = to,
+                    Color::Black => self.black_king_position = to,
+                }
+            },
+            PieceType::Rook => {
+                if from == Position::from((0, 0)) {
+                    self.state.white_can_castle_queenside = false;
+                } else if from == Position::from((7, 0)) {
+                    self.state.white_can_castle_kingside = false;
+                } else if from == Position::from((0, 7)) {
+                    self.state.black_can_castle_queenside = false;
+                } else if from == Position::from((7, 7)) {
+                    self.state.black_can_castle_kingside = false;
+                }
+            },
+            _ => {}
+        }
+
+
+        // Reset en passant target
+        self.state.en_passant_target = None;
+
+
+        match current_found_move.move_type {
+            MoveType::DoublePawnPush => self.state.en_passant_target = Some(current_found_move.from.get_change(if let Color::White = self.turn { 8 } else { -8 })),
+            MoveType::EnPassantCapture => self.board.remove_piece(current_found_move.to.get_change(if let Color::White = self.turn { -8 } else { 8 })),
+            MoveType::Capture => {
+                let piece_type = self.board.get_piece(current_found_move.to).unwrap().piece_type;
+                if let PieceType::Rook = piece_type {
+                    if current_found_move.to == Position::from((0, 0)) {
+                        self.state.white_can_castle_queenside = false;
+                    } else if current_found_move.to == Position::from((7, 0)) {
+                        self.state.white_can_castle_kingside = false;
+                    } else if current_found_move.to == Position::from((0, 7)) {
+                        self.state.black_can_castle_queenside = false;
+                    } else if current_found_move.to == Position::from((7, 7)) {
+                        self.state.black_can_castle_kingside = false;
+                    }
+                }
+                self.state.captured_piece = Some(piece_type);
+            }
+            MoveType::KingCastle => self.board.move_piece(current_found_move.to.get_change(1), current_found_move.to.get_change(-1)),
+            MoveType::QueenCastle => self.board.move_piece(current_found_move.to.get_change(-2), current_found_move.to.get_change(1)),
+            MoveType::BishopPromotion | MoveType::KnightPromotion | MoveType::QueenPromotion | MoveType::RookPromotion => {
+                self.board.remove_piece(current_found_move.from);
+                self.board.add_piece(Piece::new(self.turn, current_found_move.move_type.get_promotion_piece(), current_found_move.to));
+            }
+            MoveType::BishopPromotionCapture | MoveType::KnightPromotionCapture | MoveType::QueenPromotionCapture | MoveType::RookPromotionCapture => {
+                self.state.captured_piece = Some(self.board.get_piece(current_found_move.to).unwrap().piece_type);
+                self.board.remove_piece(current_found_move.from);
+                self.board.remove_piece(current_found_move.to);
+                self.board.add_piece(Piece::new(self.turn, current_found_move.move_type.get_promotion_piece(), current_found_move.to));
+            },
+            _ => {}
+        }
+
+        if !current_found_move.move_type.is_promotion() {
+            self.board.move_piece(from, to);
+        }
         self.turn = self.turn.opposite();
+
+        self.update_position();
+    }
+
+    pub fn unmake_move(&mut self) {
+        if self.state_stack.len() == 0 || self.moves.len() == 0 {
+            println!("No moves to unmake!");
+            return;
+        }
+
+        let last_move = self.moves.pop().unwrap();
+
+        if let Some(move_piece) = self.board.get_piece(last_move.to) {
+            if let PieceType::King = move_piece.piece_type {
+                match self.turn {
+                    Color::White => self.black_king_position = last_move.from,
+                    Color::Black => self.white_king_position = last_move.from,
+                }
+            }
+        }
+        
+        match last_move.move_type {
+            MoveType::BishopPromotion | MoveType::KnightPromotion | MoveType::QueenPromotion | MoveType::RookPromotion => {
+                self.board.add_piece(Piece::new(self.turn.opposite(), PieceType::Pawn, last_move.from));
+                self.board.remove_piece(last_move.to);
+            },
+            MoveType::EnPassantCapture => {
+                let capture_pos = if let Color::White = self.turn { 8 } else { -8 };
+
+                self.board.move_piece(last_move.to, last_move.from);
+                self.board.add_piece(Piece::new(self.turn, PieceType::Pawn, last_move.to.get_change(capture_pos)));
+            },
+            MoveType::QueenCastle => {
+                self.board.move_piece(last_move.to, last_move.from);
+                self.board.move_piece(last_move.to.get_change(1), last_move.to.get_change(-2));
+            },
+            MoveType::KingCastle => {
+                self.board.move_piece(last_move.to, last_move.from);
+                self.board.move_piece(last_move.to.get_change(-1), last_move.to.get_change(1));
+            },
+            MoveType::Capture => {
+                let capture_type = if let Some(capture_type) = self.state.captured_piece {
+                    capture_type
+                } else {
+                    println!("No capture type! {:?}", self.state);
+                    PieceType::Pawn
+                };
+                self.board.move_piece(last_move.to, last_move.from);
+                self.board.add_piece(Piece::new(self.turn, capture_type, last_move.to));
+            },
+            MoveType::BishopPromotionCapture | MoveType::KnightPromotionCapture | MoveType::QueenPromotionCapture | MoveType::RookPromotionCapture => {
+                self.board.add_piece(Piece::new(self.turn.opposite(), PieceType::Pawn, last_move.from));
+                self.board.remove_piece(last_move.to);
+                self.board.add_piece(Piece::new(self.turn, self.state.captured_piece.unwrap(), last_move.to));
+            }
+            _ => {
+                self.board.move_piece(last_move.to, last_move.from);
+            }
+        }        
+
+
+        self.state = self.state_stack.pop().unwrap();
+        self.turn = self.turn.opposite();
+    
+        self.update_position();
     }
 
     pub fn get_possible_team_moves(&self, c : Color) -> Vec<Move> {
@@ -61,15 +230,246 @@ impl Game {
 
     pub fn get_possible_piece_moves(&self, piece : Piece) -> Vec<Move> {
         let mut moves : Vec<Move> = Vec::new();
+        
 
-        piece.move_all_directions(&mut|position : Position| -> bool {
-            let piece_on_position = self.board.get_piece(position);
+
+        piece.move_all_directions(&mut|move_to_position, start_dir| -> bool {
+            let piece_on_position = self.board.get_piece(move_to_position);
+
+            if let Some(piece_on_position) = piece_on_position {
+                if piece_on_position.color == piece.color {
+                    return false;
+                }
+            }
+
+            // Check if we dont go out of pins
+            if self.king_pins.len() > 0 {
+                for pins in self.king_pins.iter() {
+                    if pins & 1 << piece.position.index() != 0 { // We are in a pin
+                        if pins & 1 << move_to_position.index() == 0 { // We are not in the direction of the pin
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            // Check king movement
+            if let PieceType::King = piece.piece_type {
+                let last_rank = if let Color::White = piece.color { 0 } else { 7 };
+                
+                // Check castling
+                if piece.position.get_row() == last_rank && piece.position.get_col() == 4 {
+                    let is_castle = move_to_position.get_col() == 6 || move_to_position.get_col() == 2;
+                    if is_castle && self.king_check != 0 {
+                        return true;
+                    }
+
+                    if move_to_position.get_col() == 2 { // Queen side castle
+                        if match piece.color { Color::White => !self.state.white_can_castle_queenside, Color::Black => !self.state.black_can_castle_queenside } {
+                            return true;
+                        }
+                        if  self.is_position_attacked(piece.position.get_change(-1), piece.color) || 
+                            self.is_position_attacked(piece.position.get_change(-2), piece.color) {
+                            return true;
+                        } 
+                        // If something is in the way return
+                        if  self.board.get_piece(piece.position.get_change(-1)).is_some() || 
+                            self.board.get_piece(piece.position.get_change(-2)).is_some() ||
+                            self.board.get_piece(piece.position.get_change(-3)).is_some(){
+                            return true;
+                        }
+                        moves.push(Move {
+                            from: piece.position,
+                            to: move_to_position,
+                            move_type: MoveType::QueenCastle
+                        });
+                        return true;
+                    } else if move_to_position.get_col() == 6 { // King side castle
+                        if match piece.color { Color::White => !self.state.white_can_castle_kingside, Color::Black => !self.state.black_can_castle_kingside } {
+                            return true;
+                        }
+
+                        if self.is_position_attacked(piece.position.get_change(1), piece.color) || 
+                            self.is_position_attacked(piece.position.get_change(2), piece.color) {
+                            return true;
+                        }
+                        // If something is in the way return
+                        if self.board.get_piece(piece.position.get_change(1)).is_some() || 
+                            self.board.get_piece(piece.position.get_change(2)).is_some() {
+                            return true;
+                        }
+                        moves.push(Move {
+                            from: piece.position,
+                            to: move_to_position,
+                            move_type: MoveType::KingCastle
+                        });
+                        return true;
+                    }
+                }
+
+                if self.is_position_attacked(move_to_position, piece.color) {
+                    return true;
+                }
+            } else {
+                // Check if we are in check and need to block
+                if self.king_check != 0 {
+                    // Check if the move is en passant capture of the checking piece
+                    if let Some(en_passant_target) = self.state.en_passant_target {
+                        if let PieceType::Pawn = piece.piece_type {
+                            if move_to_position == en_passant_target {
+                                let en_passant_pawn_position = match self.turn { Color::White => en_passant_target.get_change(-8), Color::Black => en_passant_target.get_change(8) };
+
+                                if self.king_check & 1 << en_passant_pawn_position.index() != 0 {
+                                    moves.push(Move {
+                                        from: piece.position,
+                                        to: move_to_position,
+                                        move_type: MoveType::EnPassantCapture
+                                    });
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                    // We have a current check
+                    if self.king_check & 1 << move_to_position.index() == 0 {
+                        // We are not in the direction of the check
+                        return true;
+                    }
+                }
+            }
+
+
+            // All the pawn movement checking is done here
+            if let PieceType::Pawn = piece.piece_type {
+                // Check for pawn promotion
+                if (piece.color == Color::White && move_to_position.get_row() == 7) || (piece.color == Color::Black && move_to_position.get_row() == 0) {
+                    let is_capture_move = piece.position.get_col() != move_to_position.get_col();
+
+                    if let Some(capture_piece) = self.board.get_piece(move_to_position) {
+                        if is_capture_move {
+                            if capture_piece.color == self.turn {
+                                return true;
+                            }
+                        } else {
+                            return true;
+                        }
+                    } else if is_capture_move {
+                        return true;
+                    }
+
+                    moves.push(Move {
+                        from: piece.position,
+                        to: move_to_position,
+                        move_type: if is_capture_move { MoveType::QueenPromotionCapture } else { MoveType::QueenPromotion }
+                    });
+                    moves.push(Move {
+                        from: piece.position,
+                        to: move_to_position,
+                        move_type: if is_capture_move { MoveType::RookPromotionCapture } else { MoveType::RookPromotion }
+                    });
+                    moves.push(Move {
+                        from: piece.position,
+                        to: move_to_position,
+                        move_type: if is_capture_move { MoveType::BishopPromotionCapture } else { MoveType::BishopPromotion }
+                    });
+                    moves.push(Move {
+                        from: piece.position,
+                        to: move_to_position,
+                        move_type: if is_capture_move { MoveType::KnightPromotionCapture } else { MoveType::KnightPromotion }
+                    });
+                    return true;
+                }
+                // Pawn capture
+                if piece.position.get_col() != move_to_position.get_col() {
+                    if let Some(en_passant_target) = self.state.en_passant_target {
+                        // Check if king is in check after en passant
+                        if en_passant_target == move_to_position {
+                            let en_passant_pawn_position = match self.turn { Color::White => en_passant_target.get_change(-8), Color::Black => en_passant_target.get_change(8) };
+                            let friendly_king_position = match self.turn { Color::White => self.white_king_position, Color::Black => self.black_king_position };
+                            let mut check_after_en_passant = false;
+    
+                            //println!("Checking after en passent: {:?} {:?} {:?} {:?}", piece.position.to_string(), move_to_position.to_string(), en_passant_pawn_position.to_string(), friendly_king_position.to_string());
+                            
+                            
+                            let row_dif = en_passant_pawn_position.get_row() as i8 - friendly_king_position.get_row() as i8;
+    
+                            if row_dif == 0 {
+                                let dir_index = get_direction_index(friendly_king_position, en_passant_pawn_position) as u8;
+                                //println!("Checking row: {:?}", dir_index);
+                                move_sliding_squares(friendly_king_position, (dir_index, dir_index + 1), &mut |pos, _| {
+                                    if let Some(maybe_attacking_piece) = self.board.get_piece(pos) {
+                                        // Ignore en passent and own pawn
+                                        if maybe_attacking_piece.position == en_passant_pawn_position || maybe_attacking_piece.position == piece.position {
+                                            return true;
+                                        }
+                                        if maybe_attacking_piece.color != self.turn {
+                                            if let PieceType::Queen | PieceType::Rook = maybe_attacking_piece.piece_type {
+                                                check_after_en_passant = true;
+                                            }
+                                        }
+                                        return false;
+                                    }
+                                    return true;
+                                });
+                            } 
+    
+                            if check_after_en_passant {
+                                return true;
+                            }
+    
+    
+                        
+                            moves.push(Move {
+                                from: piece.position,
+                                to: move_to_position,
+                                move_type: MoveType::EnPassantCapture
+                            });
+                            return true;
+                        }
+                    }
+                    if self.board.get_piece(move_to_position).is_some() && self.board.get_piece(move_to_position).unwrap().color != piece.color {
+                        moves.push(Move {
+                            from: piece.position,
+                            to: move_to_position,
+                            move_type: MoveType::Capture
+                        });
+                        return true;
+                    }
+                    return true;
+                } else {
+                    // Moving forward
+                    if self.board.has_piece(move_to_position) {
+                        return false;
+                    }
+                    // if double pawn push
+                    let move_type = if (piece.color == Color::White && piece.position.get_row() == 1 && move_to_position.get_row() == 3) || (piece.color == Color::Black && piece.position.get_row() == 6 && move_to_position.get_row() == 4) {
+                        MoveType::DoublePawnPush
+                    } else {MoveType::Quite};
+
+                    moves.push(Move {
+                        from: piece.position,
+                        to: move_to_position,
+                        move_type
+                    });
+                    return true;
+                }
+            }
+
+            let piece_on_position = self.board.get_piece(move_to_position);
             if piece_on_position.is_some() {
+                if piece_on_position.unwrap().color != piece.color {
+                    moves.push(Move {
+                        from: piece.position,
+                        to: move_to_position,
+                        move_type: MoveType::Capture
+                    });
+                }
                 return false;
             }
+
             moves.push(Move {
                 from: piece.position,
-                to: position,
+                to: move_to_position,
                 move_type: MoveType::Quite
             });
             return true;
@@ -78,7 +478,138 @@ impl Game {
         moves
     }
 
-    pub fn from_fen(&mut self, fen: &str) {
+    fn is_position_attacked(&self, position : Position, color : Color) -> bool {
+        if color != self.turn {
+            println!("Cant evaluate if position is attacked if its not the turn of the color");
+            return false;
+        }
+        if self.enemy_attacks & (1 << position.index()) != 0 {
+            return true;
+        }
+        false
+    }
+
+    fn update_position(&mut self) {
+        self.update_enemy_attacks();
+        self.update_king_pins();
+    }
+
+    fn update_king_pins(&mut self) {
+        self.king_pins = Vec::new();
+        self.king_check = 0;
+        for piece in self.board.pieces {
+            if let Some(piece) = piece {
+                // For performance we only check sliding pieces (queen, rook, bishop)
+                if piece.color != self.turn {
+                    let mut own_piece_count = 0;
+                    piece.move_all_directions(&mut|position, start_dir| -> bool {
+                        // Reset piece count if we start new dir
+                        if start_dir {
+                            own_piece_count = 0;
+                        }
+                        if let Some(found_piece) = self.board.get_piece(position) {
+                            if found_piece.color == self.turn {
+                                if let PieceType::King = found_piece.piece_type {
+                                    // We found king. We need to go through the line to add all the pins
+
+                                    let is_attacking_move = if let PieceType::Pawn = piece.piece_type {
+                                        if piece.position.get_col() != position.get_col() {
+                                            true
+                                        } else {
+                                            false
+                                        }
+                                    } else {
+                                        true
+                                    };
+                                    
+                                    // Add the piece position to the pins to check capture
+                                    if own_piece_count == 0 && is_attacking_move {
+                                        self.king_check |= 1 << piece.position.index();
+                                    }
+                                    
+                                    if piece.is_sliding() {
+                                        let mut pins = 1 << piece.position.index();
+
+                                        let sliding_dir = get_direction_index(piece.position, position) as u8;
+                                        move_sliding_squares(piece.position, (sliding_dir, sliding_dir + 1), &mut|pin_pos, _| -> bool {
+                                            if pin_pos.index() != position.index() {
+                                                if own_piece_count == 0 {
+                                                    self.king_check |= 1 << pin_pos.index();
+                                                }
+                                                pins |= 1 << pin_pos.index();
+                                                true
+                                            } else {
+                                                false                  
+                                            }
+                                        });
+
+                                        if own_piece_count > 0 {
+                                            self.king_pins.push(pins);
+                                        }
+                                    }
+                                    return false;
+                                } else { // Other piece of current color
+                                    own_piece_count += 1;
+                                    if own_piece_count > 1 {
+                                        return false;
+                                    }
+                                    return true;
+                                }
+                            }
+                            return false;
+                        }
+                        true
+                    });
+                }
+            }
+        }
+    }
+
+    fn update_enemy_attacks(&mut self) {
+        self.enemy_attacks = 0;
+        for piece in self.board.pieces {
+            if let Some(piece) = piece {
+                if piece.color != self.turn {
+                       piece.move_all_directions(&mut|position, start_dir| -> bool {
+                        if let PieceType::Pawn = piece.piece_type {
+                            if piece.position.get_col() != position.get_col() {
+                                //println!("Pawn attack {}", position.index());
+                                if position.is_valid() {
+                                    self.enemy_attacks |= 1 << position.index();
+                                } else {
+                                    let _ = stdin().read(&mut [0u8]).unwrap();
+                                }
+                                return false;
+                            }
+                            return true;
+                        }
+
+                        // We want to continue if we find a king
+                        if let Some(found_piece) = self.board.get_piece(position) {
+                            if let PieceType::King = found_piece.piece_type {
+                                if found_piece.color == self.turn {
+                                    self.enemy_attacks |= 1 << position.index();
+                                    return true;
+                                }
+                            }
+                        }
+
+
+                        self.enemy_attacks |= 1 << position.index();
+                        !self.board.has_piece(position)
+                    });
+                }
+            }
+        }
+
+
+    }
+
+
+
+
+    pub fn from_fen(fen: &str) -> Self {
+        let mut game = Game::default();
         let mut board = Board::new();
         let mut en_passent = None;
 
@@ -133,27 +664,19 @@ impl Game {
             en_passent = Some(Position::from(en_passent_fen.to_string()));
         }
 
-        /*self.board = board;
-        self.turn = if turn_fen == "w" { Color::White } else { Color::Black };
-        self.white_can_castle_kingside = castle_fen.contains('K');
-        self.white_can_castle_queenside = castle_fen.contains('Q');
-        self.black_can_castle_kingside = castle_fen.contains('k');
-        self.black_can_castle_queenside = castle_fen.contains('q');
-        self.en_passant_target = en_passent;
-        self.white_king_position = white_king_position;
-        self.black_king_position = black_king_position;*/
+        game.board = board;
+        game.turn = if turn_fen == "w" { Color::White } else { Color::Black };
+        game.state.white_can_castle_kingside = castle_fen.contains('K');
+        game.state.white_can_castle_queenside = castle_fen.contains('Q');
+        game.state.black_can_castle_kingside = castle_fen.contains('k');
+        game.state.black_can_castle_queenside = castle_fen.contains('q');
+        game.state.en_passant_target = en_passent;
+        game.white_king_position = white_king_position;
+        game.black_king_position = black_king_position;
 
-        *self = Game {
-            board,
-            turn: if turn_fen == "w" { Color::White } else { Color::Black },
-            white_can_castle_kingside: castle_fen.contains('K'),
-            white_can_castle_queenside: castle_fen.contains('Q'),
-            black_can_castle_kingside: castle_fen.contains('k'),
-            black_can_castle_queenside: castle_fen.contains('q'),
-            en_passant_target: en_passent,
-            white_king_position,
-            black_king_position,
-        };
+        game.update_position();
+
+        game
     }
 
     pub fn to_fen(&self) -> String {
@@ -195,20 +718,20 @@ impl Game {
         
         let mut can_castle = false;
 
-        if self.white_can_castle_kingside { can_castle = true; fen.push('K'); }
-        if self.white_can_castle_queenside { can_castle = true; fen.push('Q'); }
-        if self.black_can_castle_kingside { can_castle = true; fen.push('k'); }
-        if self.black_can_castle_queenside { can_castle = true; fen.push('q'); }
+        if self.state.white_can_castle_kingside { can_castle = true; fen.push('K'); }
+        if self.state.white_can_castle_queenside { can_castle = true; fen.push('Q'); }
+        if self.state.black_can_castle_kingside { can_castle = true; fen.push('k'); }
+        if self.state.black_can_castle_queenside { can_castle = true; fen.push('q'); }
 
         if !can_castle {
             fen.push('-');
         }
 
         fen.push(' ');
-        if self.en_passant_target.is_none() {
+        if self.state.en_passant_target.is_none() {
             fen.push('-');
         } else {
-            let position = self.en_passant_target.unwrap();
+            let position = self.state.en_passant_target.unwrap();
             let x = position.get_col();
             let y = position.get_row();
             fen.push((x as u8 + 'a' as u8) as char);

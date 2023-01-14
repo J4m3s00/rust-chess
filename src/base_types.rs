@@ -1,5 +1,5 @@
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum PieceType {
     Pawn,
     Knight,
@@ -50,6 +50,17 @@ impl Position {
 
     pub fn index(&self) -> usize {
         self.0 as usize
+    }
+
+    pub fn to_string(&self) -> String {
+        let mut fen = String::new();
+        let x = self.get_col();
+        let y = self.get_row();
+
+        fen.push((x as u8 + 'a' as u8) as char);
+        fen.push((y as u8 + '1' as u8) as char);
+
+        return fen;
     }
 }
 

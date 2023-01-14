@@ -1,3 +1,5 @@
+use std::io::{stdin, Read};
+
 use crate::piece::{Piece};
 use crate::base_types::{Position, Color, PieceType};
 
@@ -30,7 +32,9 @@ impl Board {
 
     pub fn move_piece(&mut self, from: Position, to: Position) {
         if !self.has_piece(from) {
-            panic!("No piece at position");
+            println!("No piece at {}{}", from.to_string(),to.to_string());
+            let _ = stdin().read(&mut [0u8]).unwrap();
+            return;
         }
         let piece = self.get_piece(from).unwrap();
         self.pieces[from.index()] = None;
@@ -42,15 +46,16 @@ impl Board {
     }
 
     pub fn print_custom(&self, callback: &dyn Fn(Position) -> char) {
-        println!("---------------------------------");
+        println!("+---+---+---+---+---+---+---+---+");
         for i in 0..8{
             print!("|");
             for j in 0..8{
                 print!(" {} |", callback(Position::from((j, 7 - i))));
             }
-            println!("");
-            println!("---------------------------------");
+            println!(" {}", 8 - i);
+            println!("+---+---+---+---+---+---+---+---+");
         }
+        println!("  a   b   c   d   e   f   g   h  ");
     }
 
     pub fn print(&self) { 
