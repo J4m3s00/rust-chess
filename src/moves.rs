@@ -67,6 +67,18 @@ impl Move {
         }
     }
 
+    pub fn invalid() -> Move {
+        Move {
+            from: Position::new(u8::MAX),
+            to: Position::new(u8::MAX),
+            move_type: MoveType::Quite,
+        }
+    }
+
+    pub fn is_valid(&self) -> bool {
+        self.from.is_valid() && self.to.is_valid()
+    }
+
     pub fn to_string(&self) -> String {
         let promotion_str = match self.move_type.get_promotion_piece() {
             PieceType::Knight => "n",

@@ -18,43 +18,74 @@ impl Player for HumanPlayer {
     }
 }
 
-fn search(game: &mut Game, depth: u8) -> i32 {
-    if depth == 0 {
-        return game.get_score();
+struct Search<'a> {
+    best_move: Move,
+    moves_searched: u64,
+    game: &'a mut Game
+}
+
+impl<'a> Search<'a> {
+    fn new(game : &'a mut Game) -> Search {
+        Search {
+            best_move: Move::invalid(),
+            moves_searched: 0,
+            game
+        }
     }
 
-    let mut best_score = -1000;
-    let moves = game.get_possible_team_moves(game.turn);
-    for m in moves {
-        game.make_move(m);
-        let score = -search(game, depth - 1);
-        if score > best_score {
-            best_score = score;
-        }
-        game.unmake_move();
+    fn start(&mut self, depth: u8) -> Move {
+        self.search(0, depth, -1000000, 1000000);
+
+        println!("Searched {} moves", self.moves_searched);
+        self.best_move
     }
-    best_score
+    
+    fn search(&mut self, count_from_root : u8, depth: u8, alpha: i32, beta: i32) -> i32 {
+        if depth == 0 {
+            return self.game.get_score();
+        }
+        
+        let mut alpha = alpha;
+
+        let moves = self.game.get_possible_team_moves(self.game.turn);
+        self.moves_searched += moves.len() as u64;
+
+        if count_from_root == 0 && moves.len() > 0 {
+            self.best_move = moves[0];
+        }
+
+        for m in moves {
+            self.game.make_move(m);
+            let score = -self.search(count_from_root + 1, depth - 1, -beta, -alpha);
+            self.game.unmake_move();
+
+            if score >= beta {
+                return beta;
+            }
+            if score > alpha {
+                alpha = score;
+                if count_from_root == 0 {
+                    self.best_move = m;
+                }
+            }
+        }
+        
+        return alpha;
+    }
 }
+
 
 impl Player for BotPlayer {
     fn play(&self, game: &mut Game) -> Move {
         let moves = game.get_possible_team_moves(game.turn);
         if moves.len() == 0 {
             println!("No moves available");
-            return Move::from_string("a1a1");
+            return Move::invalid();
         }
-        // Get random move index
-        let mut best_move = moves[0];
-        let mut best_score = -1000;
-        for m in moves {
-            game.make_move(m);
-            let score = -search(game, 2);
-            if score > best_score {
-                best_score = score;
-                best_move = m;
-            }
-            game.unmake_move();
-        }
-        return best_move;
+        
+        let mut search = Search::new(game);
+        let result = search.start(4);
+        println!("Bot moves: {}", result.to_string());
+        result
     }
 }
