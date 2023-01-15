@@ -15,6 +15,7 @@ mod piece;
 mod board;
 mod game;
 mod player;
+mod lichess;
 
 
 static starting_position_fen: &'static str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -56,6 +57,7 @@ enum InputMessage {
     ShowFen,
     ShowBitboard(BitboardType),
     StartGame,
+    LichessChallenge,
     Quit,
     None
 }
@@ -136,6 +138,8 @@ fn get_input() -> InputMessage {
         }
     } else if args[0] == "start" {
         return InputMessage::StartGame;
+    } else if args[0] == "lichess" {
+        return InputMessage::LichessChallenge;
     }
     return InputMessage::None;
 }
@@ -232,10 +236,13 @@ fn run_test(game : &mut Game, options : RunTestOptions) -> usize {
 
 
 
-fn main(){
+#[tokio::main]
+async fn main() {
+
 
     let mut game = Game::from_fen(starting_position_fen);
     game.board.print();
+
 
     /*run_test(&mut game, RunTestOptions {
         depth: 3,
@@ -262,6 +269,12 @@ fn main(){
                         break;
                     }
                 }
+            }
+            InputMessage::LichessChallenge => {
+                let mut online_bot = lichess::Lichess::new(&mut game);    
+                online_bot.get_account().await.expect("Failed to get account");
+                let challenge = online_bot.get_challenge().await.expect("Failed to get challenger"); 
+                online_bot.stream_game(challenge).await.expect("Failed to stream game");
             }
             InputMessage::ShowFen => {
                 println!("{}", game.to_fen());
