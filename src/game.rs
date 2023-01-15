@@ -68,7 +68,7 @@ impl Game {
         let mut own_capture_score = 0;
         let mut enemy_capture_score = 0;
 
-        let own_king_pin_check = (self.king_pins.clone(), self.king_check);
+        let friendly_king_pin_check = (self.king_pins.clone(), self.king_check);
         let enemy_king_pin_check = (self.enemy_king_pins.clone(), self.enemy_king_check);
 
         let own_attacked = self.enemy_attacks;
@@ -97,7 +97,7 @@ impl Game {
         }
 
 
-        let check_score = if own_king_pin_check.1 != 0 {
+        let check_score = if friendly_king_pin_check.1 != 0 {
             -1000
         } else if enemy_king_pin_check.1 != 0 {
             1000
@@ -105,7 +105,7 @@ impl Game {
             0
         };
 
-        let pin_score = own_king_pin_check.0.len() as i32 - enemy_king_pin_check.0.len() as i32;
+        let pin_score = friendly_king_pin_check.0.len() as i32 - enemy_king_pin_check.0.len() as i32;
         let capture_score = enemy_capture_score - own_capture_score;
 
         let count_diff = own_piece_count - enemy_piece_count;

@@ -133,7 +133,15 @@ impl<'a> Search<'a> {
         score
     }
 
-    pub fn oder_moves(&self, moves: &mut Vec<Move>) { 
-        moves.sort_by(|a, b| self.move_order_score(*b).cmp(&self.move_order_score(*a)));
+    pub fn oder_moves(&self, moves: &Vec<Move>) -> Vec<Move> { 
+
+        let mut res = moves
+                .iter()
+                .map(|m| (m, self.move_order_score(*m)))
+                .collect::<Vec<(&Move, i32)>>();
+
+        res.sort_by(|a, b| b.1.cmp(&a.1));
+
+        res.iter().map(|m| *m.0).collect()
     }
 }
