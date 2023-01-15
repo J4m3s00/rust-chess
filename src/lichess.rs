@@ -45,7 +45,7 @@ pub struct Challenge {
 pub struct LichessPlayer;
 
 impl Player for LichessPlayer {
-    fn play(&self, game: &Game) -> Move {
+    fn play(&self, _: &Game) -> Move {
         Move::new(Position::new(0), Position::new(0))
     }
 }
@@ -124,7 +124,7 @@ impl<'a> Lichess<'a> {
         let player_white: &dyn Player = if let Color::White = challenger_team { &LichessPlayer } else { &BotPlayer };
         let player_black: &dyn Player = if let Color::Black = challenger_team { &LichessPlayer } else { &BotPlayer };
 
-        let mut current_player = player_white;
+        let mut current_player: &dyn Player;
         loop {
             if let Some(chunk) = response.chunk().await.expect("Failed to read game chunk") {
                 let chunk = std::str::from_utf8(&chunk).unwrap();
@@ -164,7 +164,6 @@ impl<'a> Lichess<'a> {
                                                 .send()
                                                 .await.expect("Failed to send move");
                 }
-                println!("Game Chunk: {}", chunk);
             } else {
                 break;
             }

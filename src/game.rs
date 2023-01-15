@@ -239,7 +239,7 @@ impl Game {
         
 
 
-        piece.move_all_directions(&mut|move_to_position, start_dir| -> bool {
+        piece.move_all_directions(&mut|move_to_position, _| -> bool {
             let piece_on_position = self.board.get_piece(move_to_position);
 
             if let Some(piece_on_position) = piece_on_position {
@@ -576,7 +576,7 @@ impl Game {
         for piece in self.board.pieces {
             if let Some(piece) = piece {
                 if piece.color != self.turn {
-                       piece.move_all_directions(&mut|position, start_dir| -> bool {
+                       piece.move_all_directions(&mut|position, _| -> bool {
                         if let PieceType::Pawn = piece.piece_type {
                             if piece.position.get_col() != position.get_col() {
                                 //println!("Pawn attack {}", position.index());

@@ -20,13 +20,6 @@ pub enum MoveType {
 }
 
 impl MoveType {
-    fn is_castle(&self) -> bool {
-        match self {
-            MoveType::KingCastle => true,
-            MoveType::QueenCastle => true,
-            _ => false
-        }
-    }
 
     pub fn is_promotion(&self) -> bool {
         match self {
@@ -34,16 +27,6 @@ impl MoveType {
             MoveType::BishopPromotion => true,
             MoveType::RookPromotion => true,
             MoveType::QueenPromotion => true,
-            MoveType::KnightPromotionCapture => true,
-            MoveType::BishopPromotionCapture => true,
-            MoveType::RookPromotionCapture => true,
-            MoveType::QueenPromotionCapture => true,
-            _ => false
-        }
-    }
-
-    pub fn is_promotion_capture(&self) -> bool {
-        match self {
             MoveType::KnightPromotionCapture => true,
             MoveType::BishopPromotionCapture => true,
             MoveType::RookPromotionCapture => true,

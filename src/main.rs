@@ -1,12 +1,9 @@
-use std::{io, option, time::Instant};
+use std::{io, time::Instant};
 
-use board::Board;
 use game::Game;
 use moves::{Move, MoveType};
 use base_types::{Color, Position};
 use player::{HumanPlayer, BotPlayer, Player};
-
-use crate::precompute::NUM_SQUARES_TO_EDGE;
 
 mod base_types;
 mod precompute;
@@ -18,7 +15,7 @@ mod player;
 mod lichess;
 
 
-static starting_position_fen: &'static str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+static STARTING_POS_FEN: &'static str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 #[derive(Debug)]
 struct RunTestOptions {
@@ -240,7 +237,7 @@ fn run_test(game : &mut Game, options : RunTestOptions) -> usize {
 async fn main() {
 
 
-    let mut game = Game::from_fen(starting_position_fen);
+    let mut game = Game::from_fen(STARTING_POS_FEN);
     game.board.print();
 
 

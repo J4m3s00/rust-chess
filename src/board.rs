@@ -1,7 +1,7 @@
 use std::io::{stdin, Read};
 
 use crate::piece::{Piece};
-use crate::base_types::{Position, Color, PieceType};
+use crate::base_types::{Position};
 
 pub struct Board {
     pub pieces: [Option<Piece>; 64],

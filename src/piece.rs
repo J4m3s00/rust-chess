@@ -1,4 +1,4 @@
-use crate::{precompute::{NUM_SQUARES_TO_EDGE, DIRECTION_OFFSETS}, base_types::{Color, PieceType, Position}, moves::{Move, MoveType}};
+use crate::{precompute::{NUM_SQUARES_TO_EDGE, DIRECTION_OFFSETS}, base_types::{Color, PieceType, Position}};
 
 
 #[derive(Copy, Clone)]

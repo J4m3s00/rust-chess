@@ -12,7 +12,7 @@ pub struct HumanPlayer;
 pub struct BotPlayer;
 
 impl Player for HumanPlayer {
-    fn play(&self, game: &Game) -> Move {
+    fn play(&self, _: &Game) -> Move {
         let mut input = String::new();
         io::stdin().read_line(&mut input).expect("Failed to read line");
         Move::from_string(input.as_str())
