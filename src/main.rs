@@ -253,11 +253,14 @@ async fn main() {
         let input = get_input();
         match input {
             InputMessage::StartGame => {
+                println!("Starting game");
                 let players = (HumanPlayer, BotPlayer);
                 loop {
                     let player: &dyn Player = if game.turn == Color::White { &players.0 } else { &players.1 };
-                    while game.make_move(player.play(&game)) == false {
+                    let mut mov = player.play(&mut game);
+                    while game.make_move(mov) == false {
                         println!("Invalid move!");
+                        mov = player.play(&mut game);
                     }
                     game.board.print();
                     if game.get_possible_team_moves(game.turn).len() == 0 {

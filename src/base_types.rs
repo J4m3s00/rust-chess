@@ -9,6 +9,19 @@ pub enum PieceType {
     King,
 }
 
+impl PieceType {
+    pub fn get_value(&self) -> i32 {
+        match self {
+            PieceType::Pawn => 1,
+            PieceType::Knight => 3,
+            PieceType::Bishop => 3,
+            PieceType::Rook => 5,
+            PieceType::Queen => 9,
+            PieceType::King => 100,
+        }
+    }
+}
+
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum Color {
     White,

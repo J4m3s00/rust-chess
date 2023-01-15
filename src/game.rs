@@ -52,6 +52,16 @@ impl Default for Game {
 }
 
 impl Game {
+    pub fn get_score(&self) -> i32 {
+        let mut result = 0;
+        for piece in self.board.pieces.iter() {
+            if let Some(piece) = piece {
+                result += piece.piece_type.get_value();
+            }
+        }
+        result
+    }
+
     pub fn make_move(&mut self, mov : Move) -> bool {
         let moving_piece = self.board.get_piece(mov.from);
         if moving_piece.is_none() {

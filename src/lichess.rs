@@ -45,7 +45,7 @@ pub struct Challenge {
 pub struct LichessPlayer;
 
 impl Player for LichessPlayer {
-    fn play(&self, _: &Game) -> Move {
+    fn play(&self, _: &mut Game) -> Move {
         Move::new(Position::new(0), Position::new(0))
     }
 }
