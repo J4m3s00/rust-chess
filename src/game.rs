@@ -52,22 +52,27 @@ impl Default for Game {
 }
 
 impl Game {
-    pub fn make_move(&mut self, from : Position, to : Position) {
-        let moving_piece = self.board.get_piece(from);
+    pub fn make_move(&mut self, mov : Move) -> bool {
+        let moving_piece = self.board.get_piece(mov.from);
         if moving_piece.is_none() {
             println!("No piece to move selected!");
-            return;
+            return false;
         }
         let moving_piece = moving_piece.unwrap();
         if moving_piece.color != self.turn {
             println!("Piece is not the right color!");
-            return;
+            return false;
         }
         let piece_possible_moves = self.get_possible_piece_moves(moving_piece);
-        let current_found_move_opt = piece_possible_moves.into_iter().find(|m| m.to == to);
+        let current_found_move_opt = piece_possible_moves.into_iter().find(|m| {
+            if mov.move_type.is_promotion() && m.to == mov.to { // Get right promotion piece
+                return mov.move_type.get_promotion_piece() == m.move_type.get_promotion_piece();
+            }
+            m.to == mov.to
+        });
         if current_found_move_opt.is_none() {
             println!("Move is not possible!");
-            return;
+            return false;
         }
 
 
@@ -89,18 +94,18 @@ impl Game {
                     self.state.black_can_castle_queenside = false;
                 }
                 match self.turn {
-                    Color::White => self.white_king_position = to,
-                    Color::Black => self.black_king_position = to,
+                    Color::White => self.white_king_position = mov.to,
+                    Color::Black => self.black_king_position = mov.to,
                 }
             },
             PieceType::Rook => {
-                if from == Position::from((0, 0)) {
+                if mov.from == Position::from((0 as u8, 0 as u8)) {
                     self.state.white_can_castle_queenside = false;
-                } else if from == Position::from((7, 0)) {
+                } else if mov.from == Position::from((7 as u8, 0 as u8)) {
                     self.state.white_can_castle_kingside = false;
-                } else if from == Position::from((0, 7)) {
+                } else if mov.from == Position::from((0 as u8, 7 as u8)) {
                     self.state.black_can_castle_queenside = false;
-                } else if from == Position::from((7, 7)) {
+                } else if mov.from == Position::from((7 as u8, 7 as u8)) {
                     self.state.black_can_castle_kingside = false;
                 }
             },
@@ -118,13 +123,13 @@ impl Game {
             MoveType::Capture => {
                 let piece_type = self.board.get_piece(current_found_move.to).unwrap().piece_type;
                 if let PieceType::Rook = piece_type {
-                    if current_found_move.to == Position::from((0, 0)) {
+                    if current_found_move.to == Position::from((0 as u8, 0 as u8)) {
                         self.state.white_can_castle_queenside = false;
-                    } else if current_found_move.to == Position::from((7, 0)) {
+                    } else if current_found_move.to == Position::from((7 as u8, 0 as u8)) {
                         self.state.white_can_castle_kingside = false;
-                    } else if current_found_move.to == Position::from((0, 7)) {
+                    } else if current_found_move.to == Position::from((0 as u8, 7 as u8)) {
                         self.state.black_can_castle_queenside = false;
-                    } else if current_found_move.to == Position::from((7, 7)) {
+                    } else if current_found_move.to == Position::from((7 as u8, 7 as u8)) {
                         self.state.black_can_castle_kingside = false;
                     }
                 }
@@ -146,11 +151,12 @@ impl Game {
         }
 
         if !current_found_move.move_type.is_promotion() {
-            self.board.move_piece(from, to);
+            self.board.move_piece(mov.from, mov.to);
         }
         self.turn = self.turn.opposite();
 
         self.update_position();
+        return true;
     }
 
     pub fn unmake_move(&mut self) {
@@ -333,7 +339,7 @@ impl Game {
                     // We have a current check
                     if self.king_check & 1 << move_to_position.index() == 0 {
                         // We are not in the direction of the check
-                        return true;
+                        return !self.board.has_piece(move_to_position);
                     }
                 }
             }

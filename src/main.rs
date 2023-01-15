@@ -4,6 +4,7 @@ use board::Board;
 use game::Game;
 use moves::{Move, MoveType};
 use base_types::{Color, Position};
+use player::{HumanPlayer, BotPlayer, Player};
 
 use crate::precompute::NUM_SQUARES_TO_EDGE;
 
@@ -13,6 +14,7 @@ mod moves;
 mod piece;
 mod board;
 mod game;
+mod player;
 
 
 static starting_position_fen: &'static str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -39,9 +41,9 @@ impl RunTestOptions {
 }
 
 enum BitboardType {
-    ENEMY_ATTACK,
-    ENEMY_PINS,
-    ENEMY_CHECKS,
+    EnemyAttack,
+    EnemyPins,
+    EnemyChecks,
 }
 enum InputMessage {
     Move(Move),
@@ -53,6 +55,7 @@ enum InputMessage {
     RunTest(RunTestOptions),
     ShowFen,
     ShowBitboard(BitboardType),
+    StartGame,
     Quit,
     None
 }
@@ -123,14 +126,16 @@ fn get_input() -> InputMessage {
         }
         let bit_type = args[1];
         if bit_type == "epat" {
-            return InputMessage::ShowBitboard(BitboardType::ENEMY_ATTACK);
+            return InputMessage::ShowBitboard(BitboardType::EnemyAttack);
         } else if bit_type == "epin" {
-            return InputMessage::ShowBitboard(BitboardType::ENEMY_PINS);
+            return InputMessage::ShowBitboard(BitboardType::EnemyPins);
         } else if bit_type == "echk" {
-            return InputMessage::ShowBitboard(BitboardType::ENEMY_CHECKS);
+            return InputMessage::ShowBitboard(BitboardType::EnemyChecks);
         } else {
             return InputMessage::None;
         }
+    } else if args[0] == "start" {
+        return InputMessage::StartGame;
     }
     return InputMessage::None;
 }
@@ -151,6 +156,7 @@ fn print_help() {
     println!("    -t - show time (show the time taken for each move)");
     println!("bit <type> - show a bitboard");
     println!("    type is either epat (enemy_attack), epin (enemy_pins), echk (enemy_checks)");
+    println!("start - start a game (human (white) vs computer (black)");
     println!("quit/q - quit");
 }
 
@@ -181,9 +187,9 @@ fn print_moves(game: &Game, moves : &Vec<Move>) {
 
 fn print_bitboard(game: &Game, bitboard_type : BitboardType) {
     let bitboard = match bitboard_type {
-        BitboardType::ENEMY_ATTACK => game.enemy_attacks,
-        BitboardType::ENEMY_PINS => game.king_pins.iter().fold(0,|a, b| { return a | *b; } ),
-        BitboardType::ENEMY_CHECKS => game.king_check,
+        BitboardType::EnemyAttack => game.enemy_attacks,
+        BitboardType::EnemyPins => game.king_pins.iter().fold(0,|a, b| { return a | *b; } ),
+        BitboardType::EnemyChecks => game.king_check,
     };
     game.board.print_custom(&|pos| -> char {
         if bitboard & 1 << pos.index() != 0 {
@@ -204,7 +210,7 @@ fn run_test(game : &mut Game, options : RunTestOptions) -> usize {
         if options.show_moves {
             println!("Makeing move: {}", m.to_string());
         }
-        game.make_move(m.from, m.to);
+        game.make_move(*m);
         if options.show_board {
             game.board.print();
         }
@@ -242,6 +248,21 @@ fn main(){
     loop {
         let input = get_input();
         match input {
+            InputMessage::StartGame => {
+                let players = (HumanPlayer, BotPlayer);
+                loop {
+                    let player: &dyn Player = if game.turn == Color::White { &players.0 } else { &players.1 };
+                    while game.make_move(player.play(&game)) == false {
+                        println!("Invalid move!");
+                    }
+                    game.board.print();
+                    if game.get_possible_team_moves(game.turn).len() == 0 {
+                        println!("Checkmate!");
+                        println!("Winner: {:?}", game.turn.opposite());
+                        break;
+                    }
+                }
+            }
             InputMessage::ShowFen => {
                 println!("{}", game.to_fen());
             }
@@ -250,7 +271,8 @@ fn main(){
                 game.board.print();
             }
             InputMessage::Move(mov) => {
-                game.make_move(mov.from, mov.to);
+                println!("Making move: {}", mov.to_string());
+                game.make_move(mov);
                 game.board.print();
             }
             InputMessage::UndoMove => { 

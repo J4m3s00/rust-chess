@@ -62,7 +62,7 @@ impl MoveType {
             MoveType::BishopPromotionCapture => PieceType::Bishop,
             MoveType::RookPromotionCapture => PieceType::Rook,
             MoveType::QueenPromotionCapture => PieceType::Queen,
-            _ => {println!("Error: MoveType::get_promotion_piece() called on non-promotion move"); PieceType::Pawn}
+            _ => {PieceType::Pawn}
         }
     }
 }
@@ -85,7 +85,14 @@ impl Move {
     }
 
     pub fn to_string(&self) -> String {
-        return self.from.to_string() + &self.to.to_string();
+        let promotion_str = match self.move_type.get_promotion_piece() {
+            PieceType::Knight => "n",
+            PieceType::Bishop => "b",
+            PieceType::Rook => "r",
+            PieceType::Queen => "q",
+            _ => ""
+        };
+        return self.from.to_string() + &self.to.to_string() + promotion_str;
     }
 
     pub fn from_string(string : &str) -> Move {
@@ -94,11 +101,22 @@ impl Move {
         let from_y = iter.next().unwrap() as u8 - '1' as u8;
         let to_x = iter.next().unwrap() as u8 - 'a' as u8;
         let to_y = iter.next().unwrap() as u8 - '1' as u8;
+        let move_type = if let Some(st) = iter.next() {
+            match st {
+                'n' => MoveType::KnightPromotion,
+                'b' => MoveType::BishopPromotion,
+                'r' => MoveType::RookPromotion,
+                'q' => MoveType::QueenPromotion,
+                _ => MoveType::Quite
+            }
+        } else {
+            MoveType::Quite
+        };
 
         Move {
             from: Position::from((from_x, from_y)),
             to: Position::from((to_x, to_y)),
-            move_type: MoveType::Quite,
+            move_type,
         }
     }
 }
