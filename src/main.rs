@@ -4,6 +4,7 @@ use game::Game;
 use moves::{Move, MoveType};
 use base_types::{Color, Position};
 use player::{HumanPlayer, BotPlayer, Player};
+use search::{Search, SearchSettings};
 
 mod base_types;
 mod precompute;
@@ -13,6 +14,7 @@ mod board;
 mod game;
 mod player;
 mod lichess;
+mod search;
 
 
 static STARTING_POS_FEN: &'static str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -55,6 +57,9 @@ enum InputMessage {
     ShowBitboard(BitboardType),
     StartGame,
     LichessChallenge,
+    RunSearchTest(SearchSettings),
+    ShowScore,
+    ShowMoveOrder(Color),
     Quit,
     None
 }
@@ -118,6 +123,29 @@ fn get_input() -> InputMessage {
         });
 
         return InputMessage::RunTest(options);
+    } else if args[0] == "st" {
+        let mut settings = SearchSettings::default();
+        for param in &args[1..] {
+            match *param {
+                "-nomo" => settings.move_order = false,
+                "-log" => settings.show_log = true,
+                _ => {
+                    // check for var
+                    let var = param.split("=").collect::<Vec<&str>>();
+                    if var.len() != 2 {
+                        continue;
+                    }
+                    match var[0] {
+                        "atpen" => settings.move_on_attacked_penalty = var[1].parse::<i32>().unwrap(),
+                        "capt" => settings.capture_multiplier = var[1].parse::<i32>().unwrap(),
+                        "castl" => settings.castle_reword = var[1].parse::<i32>().unwrap(),
+                        "promo" => settings.promotion_bonus = var[1].parse::<i32>().unwrap(),
+                        _ => {}
+                    }
+                }
+            }
+        }
+        return InputMessage::RunSearchTest(settings);
     } else if args[0] == "bit" {
         // bit <type> - type is either epat (enemy_attack), epin (enemy_pins), echk (enemy_checks)
         if args.len() != 2 {
@@ -137,6 +165,16 @@ fn get_input() -> InputMessage {
         return InputMessage::StartGame;
     } else if args[0] == "lichess" {
         return InputMessage::LichessChallenge;
+    } else if args[0] == "score" {
+        return InputMessage::ShowScore;
+    } else if args[0] == "mo" {
+        if args.len() != 2 {
+            return InputMessage::None;
+        }
+        let color = if args[1] == "white" { Color::White } else { Color::Black };
+        return InputMessage::ShowMoveOrder(color);
+    } else if args[0] == "help" {
+        print_help();
     }
     return InputMessage::None;
 }
@@ -150,6 +188,13 @@ fn print_help() {
     println!("fen - show the fen");
     println!("fen <fen> - load a fen");
     println!("um - undo a move");
+    println!("st -flags var=<int> - run a search test");
+    println!("    -nomo - no move ordering");
+    println!("    -log - log the search");
+    println!("    atpen=<int> - move on attacked penalty");
+    println!("    capt=<int> - capture multiplier");
+    println!("    castl=<int> - castle reword");
+    println!("    promo=<int> - promotion bonus");
     println!("rt <depth> -flags - run a perftest");
     println!("    -d - debug (show number of moves for each move)");
     println!("    -s - show board (show the board after each move)");
@@ -158,6 +203,9 @@ fn print_help() {
     println!("bit <type> - show a bitboard");
     println!("    type is either epat (enemy_attack), epin (enemy_pins), echk (enemy_checks)");
     println!("start - start a game (human (white) vs computer (black)");
+    println!("lichess - accept a challenge of the lichess bot");
+    println!("score - show the score of the current position");
+    println!("mo <color> - show the move order for a color");
     println!("quit/q - quit");
 }
 
@@ -193,7 +241,7 @@ fn print_bitboard(game: &Game, bitboard_type : BitboardType) {
         BitboardType::EnemyChecks => game.king_check,
     };
     game.board.print_custom(&|pos| -> char {
-        if bitboard & 1 << pos.index() != 0 {
+        if bitboard & pos.bitboard() != 0 {
             return 'x';
         }
         return ' ';
@@ -309,6 +357,12 @@ async fn main() {
                     println!("------------------");
                 }
             }
+            InputMessage::RunSearchTest(settings) => {
+                let mut search = Search::new(&mut game);
+                search.settings = settings;
+                let mov = search.start();
+                println!("Best move: {}", mov.to_string());
+            }
             InputMessage::ShowMoves(pos) => {
                 if let Some(piece) = game.board.get_piece(pos) {
                     let moves = game.get_possible_piece_moves(piece);
@@ -322,6 +376,25 @@ async fn main() {
             }
             InputMessage::ShowBitboard(bitboard_type) => {
                 print_bitboard(&game, bitboard_type);
+            }
+            InputMessage::ShowScore => {
+                game.board.print();
+                println!("Score: {}", game.get_score());
+            }
+            InputMessage::ShowMoveOrder(color) => {
+                let moves = game.get_possible_team_moves(color);
+                let mut moves_copy = moves.clone();
+                let search = Search::new(&mut game);
+                search.oder_moves(&mut moves_copy);
+
+                println!("Unordered moves:");
+                for m in moves {
+                    println!("{}", m.to_string());
+                }
+                println!("Ordered moves:");
+                for m in moves_copy {
+                    println!("{}", m.to_string());
+                }
             }
             InputMessage::ShowBoard => game.board.print(),
             InputMessage::None => print_help(),

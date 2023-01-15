@@ -12,12 +12,12 @@ pub enum PieceType {
 impl PieceType {
     pub fn get_value(&self) -> i32 {
         match self {
-            PieceType::Pawn => 1,
-            PieceType::Knight => 3,
-            PieceType::Bishop => 3,
-            PieceType::Rook => 5,
-            PieceType::Queen => 9,
-            PieceType::King => 100,
+            PieceType::Pawn => 100,
+            PieceType::Knight => 300,
+            PieceType::Bishop => 300,
+            PieceType::Rook => 500,
+            PieceType::Queen => 900,
+            PieceType::King => 10000,
         }
     }
 }
@@ -33,6 +33,13 @@ impl Color {
         match self {
             Color::White => Color::Black,
             Color::Black => Color::White,
+        }
+    }
+
+    pub fn to_string(&self) -> &str {
+        match self {
+            Color::White => "White",
+            Color::Black => "Black",
         }
     }
 }
@@ -51,6 +58,10 @@ impl Position {
 
     pub fn get_col(&self) -> u8 {
         self.0 % 8
+    }
+
+    pub fn bitboard(&self) -> u64 {
+        1 << self.0
     }
 
     pub fn get_change(&self, change: i8) -> Position {

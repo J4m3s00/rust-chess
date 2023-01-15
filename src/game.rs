@@ -1,5 +1,3 @@
-use std::io::{stdin, Read};
-
 use crate::{board::Board, piece::{Piece, move_sliding_squares}, moves::{Move, MoveType}, base_types::{Color, Position, PieceType}, precompute::get_direction_index};
 
 #[derive(Copy, Clone, Debug)]
@@ -21,8 +19,11 @@ pub struct Game {
     state_stack: Vec<GameState>,
     moves: Vec<Move>,
     pub enemy_attacks: u64,
+    pub friendly_attacks: u64,
     pub king_pins: Vec<u64>,
+    pub enemy_king_pins: Vec<u64>,
     pub king_check: u64, // We can only have one check at a time
+    pub enemy_king_check: u64,
 }
 
 impl Default for Game {
@@ -43,23 +44,74 @@ impl Default for Game {
             state_stack: Vec::new(),
             moves: Vec::new(),
             enemy_attacks: 0,
+            friendly_attacks: 0,
             king_pins: Vec::new(),
+            enemy_king_pins: Vec::new(),
             king_check: 0,
+            enemy_king_check: 0,
         };
         result.update_position();
         result
     }
 }
 
+fn score_all_values(piece_count : i32, check_score : i32, pin_score : i32, capture_score: i32) -> i32 {
+    let result = piece_count + check_score + (pin_score * 10) - capture_score;
+    //println!("Board score: {piece_count} + {check_score} + ({pin_score} * 10) - {capture_score} = {result}");
+    return result;
+}
+
 impl Game {
     pub fn get_score(&self) -> i32 {
-        let mut result = 0;
+        let mut own_piece_count = 0;
+        let mut enemy_piece_count = 0;
+        let mut own_capture_score = 0;
+        let mut enemy_capture_score = 0;
+
+        let own_king_pin_check = (self.king_pins.clone(), self.king_check);
+        let enemy_king_pin_check = (self.enemy_king_pins.clone(), self.enemy_king_check);
+
+        let own_attacked = self.enemy_attacks;
+        let enemy_attacked = self.friendly_attacks;
+
+
+
         for piece in self.board.pieces.iter() {
             if let Some(piece) = piece {
-                result += piece.piece_type.get_value();
+                if piece.color == self.turn {
+
+                    own_piece_count += piece.piece_type.get_value();
+
+                    if own_attacked & piece.position.bitboard() != 0 {
+                        // High own capture score is not good
+                        own_capture_score += piece.piece_type.get_value();
+                    }
+                } else {
+                    enemy_piece_count += piece.piece_type.get_value();
+
+                    if enemy_attacked & piece.position.bitboard() != 0 {
+                        enemy_capture_score += piece.piece_type.get_value();
+                    }
+                }
             }
         }
-        result
+
+
+        let check_score = if own_king_pin_check.1 != 0 {
+            -1000
+        } else if enemy_king_pin_check.1 != 0 {
+            1000
+        } else {
+            0
+        };
+
+        let pin_score = own_king_pin_check.0.len() as i32 - enemy_king_pin_check.0.len() as i32;
+        let capture_score = enemy_capture_score - own_capture_score;
+
+        let count_diff = own_piece_count - enemy_piece_count;
+
+
+        return score_all_values(count_diff, check_score, pin_score, capture_score);
     }
 
     pub fn make_move(&mut self, mov : Move) -> bool {
@@ -233,7 +285,7 @@ impl Game {
     }
 
     pub fn get_possible_team_moves(&self, c : Color) -> Vec<Move> {
-        let mut moves : Vec<Move> = Vec::new();
+        let mut moves : Vec<Move> = Vec::with_capacity(256);
         for piece in self.board.pieces {
             if let Some(piece) = piece {
                 if piece.color == c {
@@ -245,9 +297,7 @@ impl Game {
     }
 
     pub fn get_possible_piece_moves(&self, piece : Piece) -> Vec<Move> {
-        let mut moves : Vec<Move> = Vec::new();
-        
-
+        let mut moves : Vec<Move> = Vec::with_capacity(32);
 
         piece.move_all_directions(&mut|move_to_position, _| -> bool {
             let piece_on_position = self.board.get_piece(move_to_position);
@@ -261,8 +311,8 @@ impl Game {
             // Check if we dont go out of pins
             if self.king_pins.len() > 0 {
                 for pins in self.king_pins.iter() {
-                    if pins & 1 << piece.position.index() != 0 { // We are in a pin
-                        if pins & 1 << move_to_position.index() == 0 { // We are not in the direction of the pin
+                    if pins & piece.position.bitboard() != 0 { // We are in a pin
+                        if pins & move_to_position.bitboard() == 0 { // We are not in the direction of the pin
                             return true;
                         }
                     }
@@ -335,7 +385,7 @@ impl Game {
                             if move_to_position == en_passant_target {
                                 let en_passant_pawn_position = match self.turn { Color::White => en_passant_target.get_change(-8), Color::Black => en_passant_target.get_change(8) };
 
-                                if self.king_check & 1 << en_passant_pawn_position.index() != 0 {
+                                if self.king_check & en_passant_pawn_position.bitboard() != 0 {
                                     moves.push(Move {
                                         from: piece.position,
                                         to: move_to_position,
@@ -347,7 +397,7 @@ impl Game {
                         }
                     }
                     // We have a current check
-                    if self.king_check & 1 << move_to_position.index() == 0 {
+                    if self.king_check & move_to_position.bitboard() == 0 {
                         // We are not in the direction of the check
                         return !self.board.has_piece(move_to_position);
                     }
@@ -494,134 +544,31 @@ impl Game {
         moves
     }
 
-    fn is_position_attacked(&self, position : Position, color : Color) -> bool {
+    pub fn is_position_attacked(&self, position : Position, color : Color) -> bool {
         if color != self.turn {
             println!("Cant evaluate if position is attacked if its not the turn of the color");
             return false;
         }
-        if self.enemy_attacks & (1 << position.index()) != 0 {
+        if self.enemy_attacks & position.bitboard() != 0 {
             return true;
         }
         false
     }
 
     fn update_position(&mut self) {
-        self.update_enemy_attacks();
+        self.update_attacks();
         self.update_king_pins();
     }
 
     fn update_king_pins(&mut self) {
-        self.king_pins = Vec::new();
-        self.king_check = 0;
-        for piece in self.board.pieces {
-            if let Some(piece) = piece {
-                // For performance we only check sliding pieces (queen, rook, bishop)
-                if piece.color != self.turn {
-                    let mut own_piece_count = 0;
-                    piece.move_all_directions(&mut|position, start_dir| -> bool {
-                        // Reset piece count if we start new dir
-                        if start_dir {
-                            own_piece_count = 0;
-                        }
-                        if let Some(found_piece) = self.board.get_piece(position) {
-                            if found_piece.color == self.turn {
-                                if let PieceType::King = found_piece.piece_type {
-                                    // We found king. We need to go through the line to add all the pins
-
-                                    let is_attacking_move = if let PieceType::Pawn = piece.piece_type {
-                                        if piece.position.get_col() != position.get_col() {
-                                            true
-                                        } else {
-                                            false
-                                        }
-                                    } else {
-                                        true
-                                    };
-                                    
-                                    // Add the piece position to the pins to check capture
-                                    if own_piece_count == 0 && is_attacking_move {
-                                        self.king_check |= 1 << piece.position.index();
-                                    }
-                                    
-                                    if piece.is_sliding() {
-                                        let mut pins = 1 << piece.position.index();
-
-                                        let sliding_dir = get_direction_index(piece.position, position) as u8;
-                                        move_sliding_squares(piece.position, (sliding_dir, sliding_dir + 1), &mut|pin_pos, _| -> bool {
-                                            if pin_pos.index() != position.index() {
-                                                if own_piece_count == 0 {
-                                                    self.king_check |= 1 << pin_pos.index();
-                                                }
-                                                pins |= 1 << pin_pos.index();
-                                                true
-                                            } else {
-                                                false                  
-                                            }
-                                        });
-
-                                        if own_piece_count > 0 {
-                                            self.king_pins.push(pins);
-                                        }
-                                    }
-                                    return false;
-                                } else { // Other piece of current color
-                                    own_piece_count += 1;
-                                    if own_piece_count > 1 {
-                                        return false;
-                                    }
-                                    return true;
-                                }
-                            }
-                            return false;
-                        }
-                        true
-                    });
-                }
-            }
-        }
+        (self.king_pins, self.king_check) = self.board.get_king_pins(self.turn);
+        (self.enemy_king_pins, self.enemy_king_check) = self.board.get_king_pins(self.turn.opposite());
     }
 
-    fn update_enemy_attacks(&mut self) {
-        self.enemy_attacks = 0;
-        for piece in self.board.pieces {
-            if let Some(piece) = piece {
-                if piece.color != self.turn {
-                       piece.move_all_directions(&mut|position, _| -> bool {
-                        if let PieceType::Pawn = piece.piece_type {
-                            if piece.position.get_col() != position.get_col() {
-                                //println!("Pawn attack {}", position.index());
-                                if position.is_valid() {
-                                    self.enemy_attacks |= 1 << position.index();
-                                } else {
-                                    let _ = stdin().read(&mut [0u8]).unwrap();
-                                }
-                                return false;
-                            }
-                            return true;
-                        }
-
-                        // We want to continue if we find a king
-                        if let Some(found_piece) = self.board.get_piece(position) {
-                            if let PieceType::King = found_piece.piece_type {
-                                if found_piece.color == self.turn {
-                                    self.enemy_attacks |= 1 << position.index();
-                                    return true;
-                                }
-                            }
-                        }
-
-
-                        self.enemy_attacks |= 1 << position.index();
-                        !self.board.has_piece(position)
-                    });
-                }
-            }
-        }
-
-
+    fn update_attacks(&mut self) {
+        self.enemy_attacks = self.board.get_enemy_attacks(self.turn);
+        self.friendly_attacks = self.board.get_enemy_attacks(self.turn.opposite());
     }
-
-
 
 
     pub fn from_fen(fen: &str) -> Self {
