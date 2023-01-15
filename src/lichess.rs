@@ -156,6 +156,10 @@ impl<'a> Lichess<'a> {
                     }
                     
                     let move_ = current_player.play(self.game);
+                    if !move_.is_valid() {
+                        println!("No more moves to make. Game over");
+                        break;
+                    }
                     let move_str = move_.to_string();
                     println!("Move: {}", move_str);
                     let url = BASE_URL.to_string() + "/bot/game/" + &chal.id + "/move/" + &move_str;
