@@ -59,6 +59,13 @@ impl MoveType {
 }
 
 
+impl PartialEq for Move {
+    fn eq(&self, other: &Self) -> bool {
+        self.from == other.from && self.to == other.to
+    }
+}
+
+
 #[derive(Debug, Copy, Clone)]
 pub struct Move {
     pub from: Position,

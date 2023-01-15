@@ -104,13 +104,9 @@ impl Piece {
     }
 
     pub fn get_char(&self) -> char {
-        match self.piece_type {
-            PieceType::Pawn => if let Color::White = self.color { 'P' } else { 'p' },
-            PieceType::Rook => if let Color::White = self.color { 'R' } else { 'r' },
-            PieceType::Knight => if let Color::White = self.color { 'N' } else { 'n' },
-            PieceType::Bishop => if let Color::White = self.color { 'B' } else { 'b' },
-            PieceType::Queen => if let Color::White = self.color { 'Q' } else { 'q' },
-            PieceType::King => if let Color::White = self.color { 'K' } else { 'k' },
+        match self.color {
+            Color::White => self.piece_type.get_char().to_ascii_uppercase(),
+            Color::Black => self.piece_type.get_char().to_ascii_lowercase(),
         }
     }
 

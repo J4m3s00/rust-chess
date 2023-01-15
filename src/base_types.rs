@@ -10,6 +10,7 @@ pub enum PieceType {
 }
 
 impl PieceType {
+
     pub fn get_value(&self) -> i32 {
         match self {
             PieceType::Pawn => 100,
@@ -18,6 +19,30 @@ impl PieceType {
             PieceType::Rook => 500,
             PieceType::Queen => 900,
             PieceType::King => 10000,
+        }
+    }
+
+
+    pub fn from_char(c: char) -> PieceType {
+        match c.to_ascii_lowercase() {
+            'p' => PieceType::Pawn,
+            'n' => PieceType::Knight,
+            'b' => PieceType::Bishop,
+            'r' => PieceType::Rook,
+            'q' => PieceType::Queen,
+            'k' => PieceType::King,
+            _ => PieceType::Pawn,
+        }
+    }
+
+    pub fn get_char(&self) -> char {
+        match self {
+            PieceType::Pawn => 'p',
+            PieceType::Knight => 'n',
+            PieceType::Bishop => 'b',
+            PieceType::Rook => 'r',
+            PieceType::Queen => 'q',
+            PieceType::King => 'k',
         }
     }
 }
@@ -50,6 +75,11 @@ pub struct Position(u8);
 impl Position {
     pub fn new(position: u8) -> Position {
         Position(position)
+    }
+
+    #[allow(dead_code)]
+    pub fn invalid() -> Position {
+        Position(u8::MAX)
     }
 
     pub fn get_row(&self) -> u8 {

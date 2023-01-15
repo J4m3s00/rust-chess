@@ -705,4 +705,166 @@ impl Game {
 
         fen
     }
+
+    fn move_to_pgn(&self, mov : Move) -> String {
+        let mut pgn = String::new();
+        let piece = self.board.get_piece(mov.from).unwrap();
+        let piece_type = piece.piece_type;
+        let mut is_capture = false;
+        if let Some(_) = self.board.get_piece(mov.to) {
+            is_capture = true;
+        }
+        if let PieceType::Pawn = piece_type {
+            if is_capture {
+                pgn.push((mov.from.get_col() as u8 + 'a' as u8) as char);
+            }
+            pgn.push((mov.to.get_col() as u8 + 'a' as u8) as char);
+            pgn.push((mov.to.get_row() as u8 + '1' as u8) as char);
+        } else {
+            pgn.push(piece_type.get_char());
+            if is_capture {
+                pgn.push((mov.from.get_col() as u8 + 'a' as u8) as char);
+            }
+            pgn.push((mov.to.get_col() as u8 + 'a' as u8) as char);
+            pgn.push((mov.to.get_row() as u8 + '1' as u8) as char);
+        }
+        pgn
+    }
+
+    pub fn fide_to_move(&self, fide : &str) -> Option<Move> {
+        if fide.len() == 0 { return None; }
+        if fide == "0–0" {
+            if let Color::White = self.turn {
+                return Some(Move::new(Position::from((4 as u8, 7)), Position::from((6 as u8, 7))));
+            } else {
+                return Some(Move::new(Position::from((4 as u8, 0)), Position::from((6 as u8, 0))));
+            }
+        } else if fide == "0–0–0" {
+            if let Color::White = self.turn {
+                return Some(Move::new(Position::from((4 as u8, 7)), Position::from((2 as u8, 7))));
+            } else {
+                return Some(Move::new(Position::from((4 as u8, 0)), Position::from((2 as u8, 0))));
+            }
+        }
+
+        let mut chars = fide.chars().peekable();
+        let start_char = *chars.peek().unwrap();
+        let mut current_char = None;
+        let mut is_capture = false;
+        // Moving piece
+        let mut piece_type = PieceType::Pawn;
+        if start_char.is_alphabetic() && start_char.is_ascii_uppercase() {
+            piece_type = PieceType::from_char(start_char);
+            chars.next();
+            current_char = chars.peek();
+            if current_char.is_none() {
+                return None;
+            }
+        }
+        if *current_char.unwrap() == 'x' {
+            is_capture = true;
+            chars.next();
+        }
+        if let PieceType::Pawn = piece_type {
+            if is_capture {
+                let col = start_char as u8 - 'a' as u8;
+                let row = if let Color::White = self.turn { 5 } else { 2 };
+                let from = Position::from((col, row));
+                let to = Position::from((fide.chars().nth(1).unwrap() as u8 - 'a' as u8, fide.chars().nth(2).unwrap() as u8 - '1' as u8));
+                return Some(Move::new(from, to));
+            } else {
+                let from = Position::from((start_char as u8 - 'a' as u8, if let Color::White = self.turn { 6 } else { 1 }));
+                let to = Position::from((fide.chars().nth(0).unwrap() as u8 - 'a' as u8, fide.chars().nth(1).unwrap() as u8 - '1' as u8));
+                return Some(Move::new(from, to));
+            }
+        } else {
+            let mut from = None;
+            let to;
+            let mut col = None;
+            let mut row = None;
+            while let Some(c) = chars.next() {
+                if c.is_alphabetic() {
+                    if c.is_ascii_uppercase() {
+                        piece_type = PieceType::from_char(c);
+                    } else {
+                        if col.is_none() {
+                            col = Some(c as u8 - 'a' as u8);
+                        } else {
+                            row = Some(c as u8 - '1' as u8);
+                        }
+                    }
+                } else if c.is_numeric() {
+                    if row.is_none() {
+                        row = Some(c as u8 - '1' as u8);
+                    } else {
+                        return None;
+                    }
+                } else {
+                    return None;
+                }
+            }
+            if col.is_none() || row.is_none() {
+                return None;
+            }
+            let col = col.unwrap();
+            let row = row.unwrap();
+            to = Some(Position::from((col, row)));
+            for piece in self.board.get_pieces(self.turn) {
+                if piece.piece_type == piece_type && piece.color == self.turn {
+                    let m = self.get_possible_piece_moves(piece);
+                    for mov in m {
+                        if mov.to == to.unwrap() {
+                            if from.is_none() {
+                                from = Some(mov.from);
+                            } else {
+                                return None;
+                            }
+                        }
+                    }
+                }
+            }
+            if from.is_none() {
+                return None;
+            }
+            return Some(Move::new(from.unwrap(), to.unwrap()));
+        }
+    }
+
+    pub fn to_pgn(&self) -> String {
+        let mut pgn = String::new();
+        let mut move_number = 1;
+        for (i, m) in self.moves.iter().enumerate() {
+            if i % 2 == 0 {
+                pgn.push_str(&move_number.to_string());
+                pgn.push('.');
+                move_number += 1;
+            }
+            pgn.push_str(&self.move_to_pgn(*m));
+            pgn.push(' ');
+        }
+        pgn
+    }
+
+    pub fn from_pgn(pgn : &str)-> Game {
+        let mut game = Game::default();
+        let mut moves = pgn.split('.');
+        while let Some(m) = moves.next() {
+            if m == "" || m == "1" {
+                continue;
+            }
+            
+            let mut m = m.split(' ');
+            let mut move_number_str = m.next().unwrap();
+            game.make_move(game.fide_to_move(move_number_str).unwrap());
+            if move_number_str == "" {
+                move_number_str = m.next().unwrap();
+                game.make_move(game.fide_to_move(move_number_str).unwrap());
+            }
+            if move_number_str == "" {
+                break;
+            }
+        }
+        game
+    }
+
 }

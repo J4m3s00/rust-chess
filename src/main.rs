@@ -52,8 +52,10 @@ enum InputMessage {
     ShowTeam(Color),
     ShowBoard,
     LoadFen(String),
-    RunTest(RunTestOptions),
     ShowFen,
+    LoadPgn(String),
+    ShowPgn,
+    RunTest(RunTestOptions),
     ShowBitboard(BitboardType),
     StartGame,
     LichessChallenge,
@@ -99,6 +101,11 @@ fn get_input() -> InputMessage {
             return InputMessage::ShowFen;
         }
         return InputMessage::LoadFen(input[4..].to_string());
+    } else if args[0] == "pgn" {
+        if args.len() == 1 {
+            return InputMessage::ShowPgn;
+        }
+        return InputMessage::LoadPgn(input[4..].to_string());
     } else if args[0] == "um" {
         return InputMessage::UndoMove;
     } else if args[0] == "rt" {
@@ -181,32 +188,34 @@ fn get_input() -> InputMessage {
 
 fn print_help() {
     println!("Commands:");
-    println!("m <move> - make a move");
-    println!("s <position> - show possible moves for a piece");
-    println!("s <color> - show all pieces for a team");
-    println!("s - show the board");
-    println!("fen - show the fen");
-    println!("fen <fen> - load a fen");
-    println!("um - undo a move");
-    println!("st -flags var=<int> - run a search test");
-    println!("    -nomo - no move ordering");
-    println!("    -log - log the search");
-    println!("    atpen=<int> - move on attacked penalty");
-    println!("    capt=<int> - capture multiplier");
-    println!("    castl=<int> - castle reword");
-    println!("    promo=<int> - promotion bonus");
-    println!("rt <depth> -flags - run a perftest");
-    println!("    -d - debug (show number of moves for each move)");
-    println!("    -s - show board (show the board after each move)");
-    println!("    -m - show moves (show the moves after each move)");
-    println!("    -t - show time (show the time taken for each move)");
-    println!("bit <type> - show a bitboard");
+    println!("m <move>              - make a move");
+    println!("s <position>          - show possible moves for a piece");
+    println!("s <color>             - show all pieces for a team");
+    println!("s                     - show the board");
+    println!("fen                   - show the fen");
+    println!("fen <fen>             - load a fen");
+    println!("pgn                   - show the pgn");
+    println!("pgn <pgn>             - load a pgn");
+    println!("um                    - undo a move");
+    println!("st -flags var=<int>   - run a search test");
+    println!("    -nomo             - no move ordering");
+    println!("    -log              - log the search");
+    println!("    atpen=<int>       - move on attacked penalty");
+    println!("    capt=<int>        - capture multiplier");
+    println!("    castl=<int>       - castle reword");
+    println!("    promo=<int>       - promotion bonus");
+    println!("rt <depth> -flags     - run a perftest");
+    println!("    -d                - debug (show number of moves for each move)");
+    println!("    -s                - show board (show the board after each move)");
+    println!("    -m                - show moves (show the moves after each move)");
+    println!("    -t                - show time (show the time taken for each move)");
+    println!("bit <type>            - show a bitboard");
     println!("    type is either epat (enemy_attack), epin (enemy_pins), echk (enemy_checks)");
-    println!("start - start a game (human (white) vs computer (black)");
-    println!("lichess - accept a challenge of the lichess bot");
-    println!("score - show the score of the current position");
-    println!("mo <color> - show the move order for a color");
-    println!("quit/q - quit");
+    println!("start                 - start a game (human (white) vs computer (black)");
+    println!("lichess               - accept a challenge of the lichess bot");
+    println!("score                 - show the score of the current position");
+    println!("mo <color>            - show the move order for a color");
+    println!("quit/q                - quit");
 }
 
 fn print_moves(game: &Game, moves : &Vec<Move>) {
@@ -329,6 +338,13 @@ async fn main() {
             }
             InputMessage::LoadFen(fen) => {
                 game = Game::from_fen(&fen);
+                game.board.print();
+            }
+            InputMessage::ShowPgn => {
+                println!("{}", game.to_pgn());
+            }
+            InputMessage::LoadPgn(pgn) => {
+                game = Game::from_pgn(&pgn);
                 game.board.print();
             }
             InputMessage::Move(mov) => {

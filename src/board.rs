@@ -23,6 +23,13 @@ impl Board {
         }
     }
 
+    pub fn get_pieces(&self, color: Color) -> Vec<Piece> {
+        self.pieces.iter()
+            .filter(|p| p.is_some() && p.unwrap().color == color)
+            .map(|p| p.unwrap())
+            .collect()
+    }
+
     pub fn add_piece(&mut self, piece: Piece) {
         self.pieces[piece.position.index()] = Some(piece);
     }
