@@ -115,6 +115,11 @@ impl Game {
     }
 
     pub fn make_move(&mut self, mov : Move) -> bool {
+        if !mov.is_valid() {
+            println!("Move is not on the board!");
+            return false;
+        }
+
         let moving_piece = self.board.get_piece(mov.from);
         if moving_piece.is_none() {
             println!("No piece to move selected!");
@@ -731,103 +736,8 @@ impl Game {
         pgn
     }
 
-    pub fn fide_to_move(&self, fide : &str) -> Option<Move> {
-        if fide.len() == 0 { return None; }
-        if fide == "0–0" {
-            if let Color::White = self.turn {
-                return Some(Move::new(Position::from((4 as u8, 7)), Position::from((6 as u8, 7))));
-            } else {
-                return Some(Move::new(Position::from((4 as u8, 0)), Position::from((6 as u8, 0))));
-            }
-        } else if fide == "0–0–0" {
-            if let Color::White = self.turn {
-                return Some(Move::new(Position::from((4 as u8, 7)), Position::from((2 as u8, 7))));
-            } else {
-                return Some(Move::new(Position::from((4 as u8, 0)), Position::from((2 as u8, 0))));
-            }
-        }
-
-        let mut chars = fide.chars().peekable();
-        let start_char = *chars.peek().unwrap();
-        let mut current_char = None;
-        let mut is_capture = false;
-        // Moving piece
-        let mut piece_type = PieceType::Pawn;
-        if start_char.is_alphabetic() && start_char.is_ascii_uppercase() {
-            piece_type = PieceType::from_char(start_char);
-            chars.next();
-            current_char = chars.peek();
-            if current_char.is_none() {
-                return None;
-            }
-        }
-        if *current_char.unwrap() == 'x' {
-            is_capture = true;
-            chars.next();
-        }
-        if let PieceType::Pawn = piece_type {
-            if is_capture {
-                let col = start_char as u8 - 'a' as u8;
-                let row = if let Color::White = self.turn { 5 } else { 2 };
-                let from = Position::from((col, row));
-                let to = Position::from((fide.chars().nth(1).unwrap() as u8 - 'a' as u8, fide.chars().nth(2).unwrap() as u8 - '1' as u8));
-                return Some(Move::new(from, to));
-            } else {
-                let from = Position::from((start_char as u8 - 'a' as u8, if let Color::White = self.turn { 6 } else { 1 }));
-                let to = Position::from((fide.chars().nth(0).unwrap() as u8 - 'a' as u8, fide.chars().nth(1).unwrap() as u8 - '1' as u8));
-                return Some(Move::new(from, to));
-            }
-        } else {
-            let mut from = None;
-            let to;
-            let mut col = None;
-            let mut row = None;
-            while let Some(c) = chars.next() {
-                if c.is_alphabetic() {
-                    if c.is_ascii_uppercase() {
-                        piece_type = PieceType::from_char(c);
-                    } else {
-                        if col.is_none() {
-                            col = Some(c as u8 - 'a' as u8);
-                        } else {
-                            row = Some(c as u8 - '1' as u8);
-                        }
-                    }
-                } else if c.is_numeric() {
-                    if row.is_none() {
-                        row = Some(c as u8 - '1' as u8);
-                    } else {
-                        return None;
-                    }
-                } else {
-                    return None;
-                }
-            }
-            if col.is_none() || row.is_none() {
-                return None;
-            }
-            let col = col.unwrap();
-            let row = row.unwrap();
-            to = Some(Position::from((col, row)));
-            for piece in self.board.get_pieces(self.turn) {
-                if piece.piece_type == piece_type && piece.color == self.turn {
-                    let m = self.get_possible_piece_moves(piece);
-                    for mov in m {
-                        if mov.to == to.unwrap() {
-                            if from.is_none() {
-                                from = Some(mov.from);
-                            } else {
-                                return None;
-                            }
-                        }
-                    }
-                }
-            }
-            if from.is_none() {
-                return None;
-            }
-            return Some(Move::new(from.unwrap(), to.unwrap()));
-        }
+    pub fn fide_to_move(&self, fide : &str) -> Move {
+        Move::invalid()
     }
 
     pub fn to_pgn(&self) -> String {
@@ -846,23 +756,34 @@ impl Game {
     }
 
     pub fn from_pgn(pgn : &str)-> Game {
-        let mut game = Game::default();
-        let mut moves = pgn.split('.');
-        while let Some(m) = moves.next() {
-            if m == "" || m == "1" {
+        let mut game = Game::from_fen(STARTING_POS_FEN);
+        // Get the move list of the pgn string
+        let moves = pgn.split(' ').collect::<Vec<&str>>();
+        let mut in_comment = false;
+        for mov in moves {
+            if mov.len() == 0 {
                 continue;
             }
-            
-            let mut m = m.split(' ');
-            let mut move_number_str = m.next().unwrap();
-            game.make_move(game.fide_to_move(move_number_str).unwrap());
-            if move_number_str == "" {
-                move_number_str = m.next().unwrap();
-                game.make_move(game.fide_to_move(move_number_str).unwrap());
+            if mov.starts_with('{') {
+                in_comment = true;
             }
-            if move_number_str == "" {
-                break;
+            if in_comment {
+                if mov.ends_with('}') {
+                    in_comment = false;
+                }
+                continue;
             }
+            let mut mov = mov.to_string();
+            if mov.contains('.') {
+                let dot_pos = mov.find('.').unwrap();
+                mov = mov.chars().skip(dot_pos + 1).collect::<String>();
+                if mov.is_empty() {
+                    continue;
+                }
+            }
+            println!("Move string \"{}\"", mov);
+            //let mov = game.fide_to_move(&mov);
+            //game.make_move(mov);
         }
         game
     }
