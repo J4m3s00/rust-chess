@@ -1,4 +1,4 @@
-use crate::{board::Board, piece::{Piece, move_sliding_squares}, moves::{Move, MoveType}, base_types::{Color, Position, PieceType}, precompute::get_direction_index};
+use crate::{board::Board, piece::{Piece, move_sliding_squares}, moves::{Move, MoveType}, base_types::{Color, Position, PieceType}, precompute::get_direction_index, STARTING_POS_FEN};
 
 #[derive(Copy, Clone, Debug)]
 pub struct GameState {
