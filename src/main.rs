@@ -147,6 +147,7 @@ fn get_input() -> InputMessage {
                         "capt" => settings.capture_multiplier = var[1].parse::<i32>().unwrap(),
                         "castl" => settings.castle_reword = var[1].parse::<i32>().unwrap(),
                         "promo" => settings.promotion_bonus = var[1].parse::<i32>().unwrap(),
+                        "depth" => settings.depth = var[1].parse::<u8>().unwrap(),
                         _ => {}
                     }
                 }
@@ -399,16 +400,17 @@ async fn main() {
             }
             InputMessage::ShowMoveOrder(color) => {
                 let moves = game.get_possible_team_moves(color);
-                let mut moves_copy = moves.clone();
+                
+                
                 let search = Search::new(&mut game);
-                search.oder_moves(&mut moves_copy);
-
+                let moves_searched = search.oder_moves(moves.clone());
+                
                 println!("Unordered moves:");
                 for m in moves {
                     println!("{}", m.to_string());
                 }
                 println!("Ordered moves:");
-                for m in moves_copy {
+                for m in moves_searched {
                     println!("{}", m.to_string());
                 }
             }

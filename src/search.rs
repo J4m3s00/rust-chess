@@ -34,6 +34,7 @@ impl Default for SearchSettings {
 pub struct Search<'a> {
     pub best_move: Move,
     pub moves_searched: u64,
+    pub moves_skipped: u64,
     pub settings: SearchSettings,
     game: &'a mut Game
 }
@@ -43,6 +44,7 @@ impl<'a> Search<'a> {
         Search {
             best_move: Move::invalid(),
             moves_searched: 0,
+            moves_skipped: 0,
             settings: Default::default(),
             game
         }
@@ -65,11 +67,12 @@ impl<'a> Search<'a> {
             println!("Running Search...");
         }
         
+
         let start = std::time::Instant::now();
         self.search(0, self.settings.depth, -1000000, 1000000);
 
         if self.settings.show_log {
-            println!("Searched {} moves in {}ms.", self.moves_searched, start.elapsed().as_millis());
+            println!("Searched {} moves in {}ms. Skipped {}", self.moves_searched, start.elapsed().as_millis(), self.moves_skipped);
             println!("---------------------------------");
         }
 
@@ -84,7 +87,15 @@ impl<'a> Search<'a> {
         let mut alpha = alpha;
 
         let mut moves = self.game.get_possible_team_moves(self.game.turn);
-        self.moves_searched += moves.len() as u64;
+
+        // If no moves, checkmate or stalemate
+        if moves.len() == 0 {
+            if self.game.king_check > 0 {
+                return -1000000 + count_from_root as i32;
+            } else {
+                return 0;
+            }
+        }
 
         if count_from_root == 0 && moves.len() > 0 {
             self.best_move = moves[0];
@@ -92,7 +103,7 @@ impl<'a> Search<'a> {
 
         // Oder moves
         if self.settings.move_order {
-            self.oder_moves(&mut moves);
+            moves = self.oder_moves(moves);
         }
 
         for m in moves {
@@ -100,7 +111,10 @@ impl<'a> Search<'a> {
             let score = -self.search(count_from_root + 1, depth - 1, -beta, -alpha);
             self.game.unmake_move();
 
+            self.moves_searched += 1;
+
             if score >= beta {
+                self.moves_skipped += 1;
                 return beta;
             }
             if score > alpha {
@@ -133,7 +147,7 @@ impl<'a> Search<'a> {
         score
     }
 
-    pub fn oder_moves(&self, moves: &Vec<Move>) -> Vec<Move> { 
+    pub fn oder_moves(&self, moves: Vec<Move>) -> Vec<Move> { 
 
         let mut res = moves
                 .iter()

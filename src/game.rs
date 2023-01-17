@@ -111,7 +111,8 @@ impl Game {
         let count_diff = own_piece_count - enemy_piece_count;
 
 
-        return score_all_values(count_diff, check_score, pin_score, capture_score);
+        //return score_all_values(count_diff, check_score, pin_score, capture_score);
+        return count_diff;
     }
 
     pub fn make_move(&mut self, mov : Move) -> bool {
@@ -741,6 +742,7 @@ impl Game {
     }
 
     pub fn to_pgn(&self) -> String {
+        todo!("Not Working");
         let mut pgn = String::new();
         let mut move_number = 1;
         for (i, m) in self.moves.iter().enumerate() {
@@ -756,6 +758,7 @@ impl Game {
     }
 
     pub fn from_pgn(pgn : &str)-> Game {
+        todo!("Not Working");
         let mut game = Game::from_fen(STARTING_POS_FEN);
         // Get the move list of the pgn string
         let moves = pgn.split(' ').collect::<Vec<&str>>();
