@@ -72,7 +72,7 @@ impl<'a> Lichess<'a> {
                                     .send().await?;
 
         let result = response.text().await?;
-        
+      
         let json: PlayerData = serde_json::from_str(result.as_str()).unwrap();
         println!("{:?}", json);
         Ok(())
@@ -89,6 +89,10 @@ impl<'a> Lichess<'a> {
             let chunk = std::str::from_utf8(&chunk).unwrap();
 
             println!("Challenge chunk: {}", chunk);
+
+            if chunk.len() < 5 { // We need some text for json
+                continue;
+            }
 
             let json : serde_json::Value = serde_json::from_str(chunk).unwrap();
             if json.is_object() {
