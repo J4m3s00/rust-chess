@@ -24,8 +24,8 @@ impl Default for SearchSettings {
             show_log: false,
             move_on_attacked_penalty: 200,
             capture_multiplier: 10,
-            castle_reword: 50,
-            promotion_bonus: 25
+            castle_reword: 10,
+            promotion_bonus: 10
         }
     }
 }

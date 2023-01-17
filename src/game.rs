@@ -55,12 +55,6 @@ impl Default for Game {
     }
 }
 
-fn score_all_values(piece_count : i32, check_score : i32, pin_score : i32, capture_score: i32) -> i32 {
-    let result = piece_count + check_score + (pin_score * 10) - capture_score;
-    //println!("Board score: {piece_count} + {check_score} + ({pin_score} * 10) - {capture_score} = {result}");
-    return result;
-}
-
 impl Game {
     pub fn evaluate(&self) -> i32 {
         let mut friendly_score = 0;
@@ -99,7 +93,7 @@ impl Game {
         friendly_score += if friendly_king_pin_check.1 != 0 { -1000 } else { 0 };
         enemy_score += if enemy_king_pin_check.1 != 0 { -1000 } else { 0 };
 
-        
+
         friendly_score += self.evaluate_square_table(self.turn);
         enemy_score += self.evaluate_square_table(self.turn.opposite());
 
