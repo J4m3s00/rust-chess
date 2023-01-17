@@ -81,7 +81,7 @@ impl<'a> Search<'a> {
     
     fn search(&mut self, count_from_root : u8, depth: u8, alpha: i32, beta: i32) -> i32 {
         if depth == 0 {
-            return self.game.get_score();
+            return self.search_captures(alpha, beta);
         }
         
         let mut alpha = alpha;
@@ -125,6 +125,39 @@ impl<'a> Search<'a> {
             }
         }
         
+        return alpha;
+    }
+
+    fn search_captures(&mut self, alpha: i32, beta: i32) -> i32 {
+        let mut alpha = alpha;
+        let eval = self.game.evaluate();
+        self.moves_searched += 1;
+        if eval >= beta {
+            return beta;
+        }
+        if eval > alpha {
+            alpha = eval;
+        }
+
+        let possible_moves = self.game.get_possible_team_moves(self.game.turn);
+        let capture_moves = possible_moves
+            .iter()
+            .filter(|m| m.move_type.is_capture())
+            .collect::<Vec<&Move>>();
+
+        for m in capture_moves {
+            self.game.make_move(*m);
+            let score = -self.search_captures(-beta, -alpha);
+            self.game.unmake_move();
+
+            if score >= beta {
+                return beta;
+            }
+            if score > alpha {
+                alpha = score;
+            }
+        }
+
         return alpha;
     }
 

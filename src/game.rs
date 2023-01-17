@@ -1,4 +1,4 @@
-use crate::{board::Board, piece::{Piece, move_sliding_squares}, moves::{Move, MoveType}, base_types::{Color, Position, PieceType}, precompute::get_direction_index, STARTING_POS_FEN};
+use crate::{board::Board, piece::{Piece, move_sliding_squares}, moves::{Move, MoveType}, base_types::{Color, Position, PieceType}, precompute::get_direction_index, STARTING_POS_FEN, square_table::{square_table_read, self}};
 
 #[derive(Copy, Clone, Debug)]
 pub struct GameState {
@@ -62,11 +62,10 @@ fn score_all_values(piece_count : i32, check_score : i32, pin_score : i32, captu
 }
 
 impl Game {
-    pub fn get_score(&self) -> i32 {
-        let mut own_piece_count = 0;
-        let mut enemy_piece_count = 0;
-        let mut own_capture_score = 0;
-        let mut enemy_capture_score = 0;
+    pub fn evaluate(&self) -> i32 {
+        let mut friendly_score = 0;
+        let mut enemy_score = 0;
+
 
         let friendly_king_pin_check = (self.king_pins.clone(), self.king_check);
         let enemy_king_pin_check = (self.enemy_king_pins.clone(), self.enemy_king_check);
@@ -80,39 +79,50 @@ impl Game {
             if let Some(piece) = piece {
                 if piece.color == self.turn {
 
-                    own_piece_count += piece.piece_type.get_value();
+                    friendly_score += piece.piece_type.get_value();
 
                     if own_attacked & piece.position.bitboard() != 0 {
                         // High own capture score is not good
-                        own_capture_score += piece.piece_type.get_value();
+                        friendly_score -= piece.piece_type.get_value();
                     }
                 } else {
-                    enemy_piece_count += piece.piece_type.get_value();
+                    enemy_score += piece.piece_type.get_value();
 
                     if enemy_attacked & piece.position.bitboard() != 0 {
-                        enemy_capture_score += piece.piece_type.get_value();
+                        enemy_score -= piece.piece_type.get_value();
                     }
                 }
             }
         }
 
 
-        let check_score = if friendly_king_pin_check.1 != 0 {
-            -1000
-        } else if enemy_king_pin_check.1 != 0 {
-            1000
-        } else {
-            0
-        };
+        friendly_score += if friendly_king_pin_check.1 != 0 { -1000 } else { 0 };
+        enemy_score += if enemy_king_pin_check.1 != 0 { -1000 } else { 0 };
 
-        let pin_score = friendly_king_pin_check.0.len() as i32 - enemy_king_pin_check.0.len() as i32;
-        let capture_score = enemy_capture_score - own_capture_score;
-
-        let count_diff = own_piece_count - enemy_piece_count;
-
+        
+        friendly_score += self.evaluate_square_table(self.turn);
+        enemy_score += self.evaluate_square_table(self.turn.opposite());
 
         //return score_all_values(count_diff, check_score, pin_score, capture_score);
-        return count_diff;
+        return friendly_score - enemy_score;
+    }
+
+    pub fn evaluate_square_table(&self, color : Color) -> i32 {
+        let mut result = 0;
+        let pieces = self.board.pieces.iter().filter(|p| p.is_some() && p.unwrap().color == color).map(|p| p.unwrap()).collect::<Vec<Piece>>();
+        for piece in pieces {
+            let square_table = match piece.piece_type {
+                PieceType::Bishop => &square_table::ST_BISHOPS,
+                PieceType::King => &square_table::ST_KING_MID,
+                PieceType::Knight => &square_table::ST_KNIGHTS,
+                PieceType::Pawn => &square_table::ST_PAWNS,
+                PieceType::Queen => &square_table::ST_QUEENS,
+                PieceType::Rook => &square_table::ST_ROOKS,
+            };
+            let position = piece.position;
+            result += square_table_read(square_table, position, color);
+        }
+        result
     }
 
     pub fn make_move(&mut self, mov : Move) -> bool {

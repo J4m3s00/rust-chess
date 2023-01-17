@@ -29,6 +29,18 @@ impl MoveType {
         }
     }
 
+    pub fn is_capture(&self) -> bool {
+        match self {
+            MoveType::Capture => true,
+            MoveType::EnPassantCapture => true,
+            MoveType::KnightPromotionCapture => true,
+            MoveType::BishopPromotionCapture => true,
+            MoveType::RookPromotionCapture => true,
+            MoveType::QueenPromotionCapture => true,
+            _ => false
+        }
+    }
+
     pub fn is_promotion(&self) -> bool {
         match self {
             MoveType::KnightPromotion => true,

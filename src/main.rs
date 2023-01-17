@@ -15,7 +15,7 @@ mod game;
 mod player;
 mod lichess;
 mod search;
-
+mod square_table;
 
 static STARTING_POS_FEN: &'static str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
@@ -396,7 +396,7 @@ async fn main() {
             }
             InputMessage::ShowScore => {
                 game.board.print();
-                println!("Score: {}", game.get_score());
+                println!("Score: {}", game.evaluate());
             }
             InputMessage::ShowMoveOrder(color) => {
                 let moves = game.get_possible_team_moves(color);
