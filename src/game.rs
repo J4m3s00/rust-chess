@@ -90,8 +90,8 @@ impl Game {
         }
 
 
-        friendly_score += if friendly_king_pin_check.1 != 0 { -1000 } else { 0 };
-        enemy_score += if enemy_king_pin_check.1 != 0 { -1000 } else { 0 };
+        friendly_score += if friendly_king_pin_check.1 != 0 { -100 } else { 0 };
+        enemy_score += if enemy_king_pin_check.1 != 0 { -100 } else { 0 };
 
 
         friendly_score += self.evaluate_square_table(self.turn);
@@ -143,7 +143,7 @@ impl Game {
             m.to == mov.to
         });
         if current_found_move_opt.is_none() {
-            println!("Move is not possible!");
+            println!("Move {:?} is not possible!", mov);
             return false;
         }
 

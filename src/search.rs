@@ -1,5 +1,6 @@
-use crate::{moves::Move, game::Game};
+use std::time::Instant;
 
+use crate::{game::Game, moves::Move};
 
 pub struct SearchSettings {
     pub depth: u8,
@@ -10,10 +11,10 @@ pub struct SearchSettings {
      * Advanced settings. Should stay at default unless you know what you are doing.
      * They mess with the evaluation and move ordering functions.
      */
-    pub move_on_attacked_penalty: i32,  // Penalty for moving on a square that is attacked by the opponent
-    pub capture_multiplier: i32,        // Multiplier for captures
-    pub castle_reword: i32,             // Reword for castling
-    pub promotion_bonus: i32            // Bonus for promoting a pawn
+    pub move_on_attacked_penalty: i32, // Penalty for moving on a square that is attacked by the opponent
+    pub capture_multiplier: i32, // Multiplier for captures
+    pub castle_reword: i32,      // Reword for castling
+    pub promotion_bonus: i32,    // Bonus for promoting a pawn
 }
 
 impl Default for SearchSettings {
@@ -25,65 +26,71 @@ impl Default for SearchSettings {
             move_on_attacked_penalty: 200,
             capture_multiplier: 10,
             castle_reword: 10,
-            promotion_bonus: 10
+            promotion_bonus: 10,
         }
     }
 }
-
 
 pub struct Search<'a> {
     pub best_move: Move,
     pub moves_searched: u64,
     pub moves_skipped: u64,
     pub settings: SearchSettings,
-    game: &'a mut Game
+    game: &'a mut Game,
 }
 
 impl<'a> Search<'a> {
-    pub fn new(game : &'a mut Game) -> Search {
+    pub fn new(game: &'a mut Game) -> Search {
         Search {
             best_move: Move::invalid(),
             moves_searched: 0,
             moves_skipped: 0,
             settings: Default::default(),
-            game
+            game,
         }
     }
 
     pub fn start(&mut self) -> Move {
         if self.settings.show_log {
             println!("---------------------------------");
-            println!("Starting best move search!"); 
+            println!("Starting best move search!");
             println!("Team = {}", self.game.turn.to_string());
             println!("Depth = {}", self.settings.depth);
             println!("Move order enabled = {}", self.settings.move_order);
             if self.settings.move_order {
                 println!("Move order settings:");
-                println!("Move on attacked penalty = {}", self.settings.move_on_attacked_penalty);
+                println!(
+                    "Move on attacked penalty = {}",
+                    self.settings.move_on_attacked_penalty
+                );
                 println!("Capture multiplier = {}", self.settings.capture_multiplier);
                 println!("Castle reword = {}", self.settings.castle_reword);
                 println!("Promotion bonus = {}", self.settings.promotion_bonus);
             }
             println!("Running Search...");
         }
-        
 
         let start = std::time::Instant::now();
         self.search(0, self.settings.depth, -1000000, 1000000);
 
         if self.settings.show_log {
-            println!("Searched {} moves in {}ms. Skipped {}", self.moves_searched, start.elapsed().as_millis(), self.moves_skipped);
+            println!(
+                "Searched {} moves in {}ms. Skipped {}",
+                self.moves_searched,
+                start.elapsed().as_millis(),
+                self.moves_skipped
+            );
             println!("---------------------------------");
         }
 
         self.best_move
     }
-    
-    fn search(&mut self, count_from_root : u8, depth: u8, alpha: i32, beta: i32) -> i32 {
+
+    fn search(&mut self, count_from_root: u8, depth: u8, alpha: i32, beta: i32) -> i32 {
         if depth == 0 {
             return self.search_captures(alpha, beta);
         }
-        
+
         let mut alpha = alpha;
 
         let mut moves = self.game.get_possible_team_moves(self.game.turn);
@@ -124,7 +131,7 @@ impl<'a> Search<'a> {
                 }
             }
         }
-        
+
         return alpha;
     }
 
@@ -161,12 +168,13 @@ impl<'a> Search<'a> {
         return alpha;
     }
 
-    fn move_order_score(&self, m : Move) -> i32 {
+    fn move_order_score(&self, m: Move) -> i32 {
         let mut score = 0;
         let moving_piece = self.game.board.get_piece(m.from).unwrap();
 
         if let Some(capture_piece) = self.game.board.get_piece(m.to) {
-            score += self.settings.capture_multiplier * capture_piece.piece_type.get_value() - moving_piece.piece_type.get_value();
+            score += self.settings.capture_multiplier * capture_piece.piece_type.get_value()
+                - moving_piece.piece_type.get_value();
         }
         if m.move_type.is_promotion() {
             score += self.settings.promotion_bonus + m.move_type.get_promotion_piece().get_value()
@@ -180,12 +188,11 @@ impl<'a> Search<'a> {
         score
     }
 
-    pub fn oder_moves(&self, moves: Vec<Move>) -> Vec<Move> { 
-
+    pub fn oder_moves(&self, moves: Vec<Move>) -> Vec<Move> {
         let mut res = moves
-                .iter()
-                .map(|m| (m, self.move_order_score(*m)))
-                .collect::<Vec<(&Move, i32)>>();
+            .iter()
+            .map(|m| (m, self.move_order_score(*m)))
+            .collect::<Vec<(&Move, i32)>>();
 
         res.sort_by(|a, b| b.1.cmp(&a.1));
 
