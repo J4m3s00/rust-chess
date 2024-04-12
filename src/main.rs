@@ -1,19 +1,19 @@
 use std::{io, time::Instant};
 
+use base_types::{Color, Position};
 use game::Game;
 use moves::{Move, MoveType};
-use base_types::{Color, Position};
-use player::{HumanPlayer, BotPlayer, Player};
+use player::{BotPlayer, HumanPlayer, Player};
 use search::{Search, SearchSettings};
 
 mod base_types;
-mod precompute;
-mod moves;
-mod piece;
 mod board;
 mod game;
-mod player;
 mod lichess;
+mod moves;
+mod piece;
+mod player;
+mod precompute;
 mod search;
 mod square_table;
 
@@ -21,11 +21,11 @@ static STARTING_POS_FEN: &'static str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQ
 
 #[derive(Debug)]
 struct RunTestOptions {
-    depth : u8,
+    depth: u8,
     debug: bool,
     show_board: bool,
     show_moves: bool,
-    show_time: bool
+    show_time: bool,
 }
 
 impl RunTestOptions {
@@ -35,7 +35,7 @@ impl RunTestOptions {
             debug: false,
             show_board: false,
             show_moves: false,
-            show_time: false
+            show_time: false,
         }
     }
 }
@@ -63,12 +63,14 @@ enum InputMessage {
     ShowScore,
     ShowMoveOrder(Color),
     Quit,
-    None
+    None,
 }
 
 fn get_input() -> InputMessage {
     let mut input = String::new();
-    io::stdin().read_line(&mut input).expect("Failed to read line");
+    io::stdin()
+        .read_line(&mut input)
+        .expect("Failed to read line");
     if input.len() == 0 {
         return InputMessage::None;
     }
@@ -76,13 +78,12 @@ fn get_input() -> InputMessage {
     if input == "quit" || input == "q" {
         return InputMessage::Quit;
     }
-    
+
     let args: Vec<&str> = input.split(" ").collect();
     if args[0] == "m" {
         if args.len() != 2 {
             return InputMessage::None;
         }
-        
 
         return InputMessage::Move(Move::from_string(args[1]));
     } else if args[0] == "s" {
@@ -90,7 +91,11 @@ fn get_input() -> InputMessage {
             return InputMessage::ShowBoard;
         }
         if args[1].to_uppercase() == "BLACK" || args[1].to_uppercase() == "WHITE" {
-            let team = if args[1].to_uppercase() == "BLACK" { Color::Black } else { Color::White };
+            let team = if args[1].to_uppercase() == "BLACK" {
+                Color::Black
+            } else {
+                Color::White
+            };
             return InputMessage::ShowTeam(team);
         } else {
             let position = Position::from(args[1].to_string());
@@ -109,14 +114,13 @@ fn get_input() -> InputMessage {
     } else if args[0] == "um" {
         return InputMessage::UndoMove;
     } else if args[0] == "rt" {
-
         if args.len() < 2 {
             return InputMessage::None;
         }
-        
+
         let depth = args[1].parse::<u8>().unwrap();
         let mut options = RunTestOptions::new(depth);
-        
+
         args[2..].iter().for_each(|arg| {
             if *arg == "-d" {
                 options.debug = true;
@@ -143,7 +147,9 @@ fn get_input() -> InputMessage {
                         continue;
                     }
                     match var[0] {
-                        "atpen" => settings.move_on_attacked_penalty = var[1].parse::<i32>().unwrap(),
+                        "atpen" => {
+                            settings.move_on_attacked_penalty = var[1].parse::<i32>().unwrap()
+                        }
                         "capt" => settings.capture_multiplier = var[1].parse::<i32>().unwrap(),
                         "castl" => settings.castle_reword = var[1].parse::<i32>().unwrap(),
                         "promo" => settings.promotion_bonus = var[1].parse::<i32>().unwrap(),
@@ -179,7 +185,11 @@ fn get_input() -> InputMessage {
         if args.len() != 2 {
             return InputMessage::None;
         }
-        let color = if args[1] == "white" { Color::White } else { Color::Black };
+        let color = if args[1] == "white" {
+            Color::White
+        } else {
+            Color::Black
+        };
         return InputMessage::ShowMoveOrder(color);
     } else if args[0] == "help" {
         print_help();
@@ -219,10 +229,9 @@ fn print_help() {
     println!("quit/q                - quit");
 }
 
-fn print_moves(game: &Game, moves : &Vec<Move>) {
+fn print_moves(game: &Game, moves: &Vec<Move>) {
     game.board.print_custom(&|pos| -> char {
-
-        if let Some(found_move) = moves.iter().find(|m| {m.to == pos}) {
+        if let Some(found_move) = moves.iter().find(|m| m.to == pos) {
             match found_move.move_type {
                 MoveType::Capture => return 'c',
                 MoveType::EnPassantCapture => return 'e',
@@ -231,9 +240,8 @@ fn print_moves(game: &Game, moves : &Vec<Move>) {
                     if !game.board.has_piece(pos) {
                         return 'x';
                     }
-                },
-            }    
-            
+                }
+            }
         }
 
         if let Some(piece) = game.board.get_piece(pos) {
@@ -244,10 +252,12 @@ fn print_moves(game: &Game, moves : &Vec<Move>) {
     });
 }
 
-fn print_bitboard(game: &Game, bitboard_type : BitboardType) {
+fn print_bitboard(game: &Game, bitboard_type: BitboardType) {
     let bitboard = match bitboard_type {
         BitboardType::EnemyAttack => game.enemy_attacks,
-        BitboardType::EnemyPins => game.king_pins.iter().fold(0,|a, b| { return a | *b; } ),
+        BitboardType::EnemyPins => game.king_pins.iter().fold(0, |a, b| {
+            return a | *b;
+        }),
         BitboardType::EnemyChecks => game.king_check,
     };
     game.board.print_custom(&|pos| -> char {
@@ -258,7 +268,7 @@ fn print_bitboard(game: &Game, bitboard_type : BitboardType) {
     });
 }
 
-fn run_test(game : &mut Game, options : RunTestOptions) -> usize {
+fn run_test(game: &mut Game, options: RunTestOptions) -> usize {
     if options.depth == 0 {
         return 1;
     }
@@ -274,7 +284,14 @@ fn run_test(game : &mut Game, options : RunTestOptions) -> usize {
             game.board.print();
         }
 
-        let add = run_test(game, RunTestOptions{ depth: options.depth - 1, debug: false, ..options });
+        let add = run_test(
+            game,
+            RunTestOptions {
+                depth: options.depth - 1,
+                debug: false,
+                ..options
+            },
+        );
 
         if options.debug {
             println!("{}: {}", m.to_string(), add);
@@ -289,15 +306,10 @@ fn run_test(game : &mut Game, options : RunTestOptions) -> usize {
     return count;
 }
 
-
-
 #[tokio::main]
 async fn main() {
-
-
     let mut game = Game::from_fen(STARTING_POS_FEN);
     game.board.print();
-
 
     /*run_test(&mut game, RunTestOptions {
         depth: 3,
@@ -314,7 +326,11 @@ async fn main() {
                 println!("Starting game");
                 let players = (HumanPlayer, BotPlayer);
                 loop {
-                    let player: &dyn Player = if game.turn == Color::White { &players.0 } else { &players.1 };
+                    let player: &dyn Player = if game.turn == Color::White {
+                        &players.0
+                    } else {
+                        &players.1
+                    };
                     let mut mov = player.play(&mut game);
                     while game.make_move(mov) == false {
                         println!("Invalid move!");
@@ -329,10 +345,19 @@ async fn main() {
                 }
             }
             InputMessage::LichessChallenge => {
-                let mut online_bot = lichess::Lichess::new(&mut game);    
-                online_bot.get_account().await.expect("Failed to get account");
-                let challenge = online_bot.get_challenge().await.expect("Failed to get challenger"); 
-                online_bot.stream_game(challenge).await.expect("Failed to stream game");
+                let mut online_bot = lichess::Lichess::new(&mut game);
+                online_bot
+                    .get_account()
+                    .await
+                    .expect("Failed to get account");
+                let challenge = online_bot
+                    .get_challenge()
+                    .await
+                    .expect("Failed to get challenger");
+                online_bot
+                    .stream_game(challenge)
+                    .await
+                    .expect("Failed to stream game");
             }
             InputMessage::ShowFen => {
                 println!("{}", game.to_fen());
@@ -353,7 +378,7 @@ async fn main() {
                 game.make_move(mov);
                 game.board.print();
             }
-            InputMessage::UndoMove => { 
+            InputMessage::UndoMove => {
                 game.unmake_move();
                 game.board.print();
             }
@@ -400,11 +425,10 @@ async fn main() {
             }
             InputMessage::ShowMoveOrder(color) => {
                 let moves = game.get_possible_team_moves(color);
-                
-                
+
                 let search = Search::new(&mut game);
                 let moves_searched = search.oder_moves(moves.clone());
-                
+
                 println!("Unordered moves:");
                 for m in moves {
                     println!("{}", m.to_string());
